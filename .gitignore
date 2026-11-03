@@ -1,0 +1,15 @@
+# 运行产物
+out/
+
+# 本地配置(含个人信息,不入库)
+config.yaml
+.env
+
+# 二进制
+infosentinel
+bin/
+
+# 编辑器与工具会话产物
+.idea/
+.vscode/
+.zcode/
