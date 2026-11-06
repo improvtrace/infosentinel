@@ -1,13 +1,17 @@
-# 运行产物
-out/
+# 编译产物(bin、安装包;锚定仓库根,避免误杀 backend/cmd/infosentinel 源码包)
+artifacts/
+/infosentinel
+
+# 运行时依赖与输出(数据库、日志、去重状态、dry-run 邮件、覆盖率)
+.tests/
 
 # 本地配置(含个人信息,不入库)
 config.yaml
+config.yaml.bak
 .env
 
-# 二进制
-infosentinel
-bin/
+# 前端依赖(node_modules;frontend/dist 为 go:embed 输入,随仓库提交)
+frontend/node_modules/
 
 # 编辑器与工具会话产物
 .idea/

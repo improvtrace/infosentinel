@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   设计体系 — 参考 DeepSeek Harness:深色开发者审美 + 克制留白
+   字体:DM Sans 风格系统栈;主色:深蓝 → 青绿渐变;圆角 10-14px
+   ============================================================ */
+
+@layer base {
+  :root {
+    --brand-1: #0b1020;
+    --brand-2: #151b2e;
+    --accent: #4d6bfe;
+    --accent-2: #16c8a8;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-[#f7f8fb] text-slate-800 dark:bg-[#080b14] dark:text-slate-200;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  /* 细滚动条 */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* ---- 布局 ---- */
+  .sidebar {
+    @apply fixed left-0 top-0 h-full w-[220px] z-30 flex flex-col
+      bg-white dark:bg-[#0b0f1a] border-r border-slate-200/80 dark:border-slate-800/80;
+  }
+  .sidebar-brand {
+    @apply flex items-center gap-2.5 px-5 h-[60px] font-semibold text-[15px] tracking-tight;
+  }
+  .brand-dot {
+    @apply w-7 h-7 rounded-[9px] grid place-items-center text-white text-[13px] font-bold;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  }
+  .nav-item {
+    @apply flex items-center gap-2.5 mx-3 px-3 py-[9px] rounded-[10px] text-[13.5px]
+      text-slate-500 dark:text-slate-400 no-underline transition-colors duration-150;
+  }
+  .nav-item:hover {
+    @apply bg-slate-100 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100;
+  }
+  .nav-item.active {
+    @apply bg-[#eef2ff] dark:bg-[#161f3a] text-[#3b5bdb] dark:text-[#8ea6ff] font-medium;
+  }
+  .main-wrap { @apply ml-[220px] min-h-screen flex flex-col; }
+  .topbar {
+    @apply sticky top-0 z-20 h-[60px] flex items-center gap-3 px-8
+      bg-[#f7f8fb]/85 dark:bg-[#080b14]/85 backdrop-blur border-b
+      border-slate-200/70 dark:border-slate-800/70;
+  }
+  .content { @apply flex-1 px-8 py-7 max-w-[1180px] w-full; }
+
+  /* ---- 卡片 ---- */
+  .card {
+    @apply bg-white dark:bg-[#0d1220] border border-slate-200/80 dark:border-slate-800/80
+      rounded-[14px] shadow-[0_1px_2px_rgba(16,24,40,.04)];
+  }
+  .card-hover { @apply transition-all duration-200 hover:shadow-[0_8px_24px_rgba(16,24,40,.08)]
+      hover:border-slate-300 dark:hover:border-slate-700; }
+
+  .stat {
+    @apply card px-5 py-4 relative overflow-hidden;
+  }
+  .stat-value { @apply text-[26px] font-semibold leading-tight tracking-tight; }
+  .stat-label { @apply text-[12px] text-slate-500 dark:text-slate-400 mt-0.5; }
+
+  /* ---- 按钮 ---- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-[10px] px-3.5 py-[7px]
+      text-[13px] font-medium bg-[#4d6bfe] text-white border border-transparent
+      transition-all duration-150 hover:brightness-110 active:scale-[.985]
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply bg-white dark:bg-transparent text-slate-600 dark:text-slate-300
+      border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/70;
+  }
+  .btn-danger {
+    @apply bg-transparent text-red-600 dark:text-red-400 border-slate-200 dark:border-slate-700
+      hover:bg-red-50 dark:hover:bg-red-950/40 hover:border-red-300;
+  }
+  .btn-sm { @apply px-2.5 py-1 text-[12px] rounded-lg; }
+
+  /* ---- 表单 ---- */
+  .field-label {
+    @apply block text-[12px] font-medium text-slate-500 dark:text-slate-400 mt-4 mb-1.5;
+  }
+  .field-hint { @apply text-[11.5px] text-slate-400 dark:text-slate-500 mt-1; }
+  .input {
+    @apply w-full bg-white dark:bg-[#0a0f1c] border border-slate-200 dark:border-slate-700
+      rounded-[10px] px-3 py-[7px] text-[13px] text-slate-800 dark:text-slate-100
+      placeholder:text-slate-400 transition-shadow
+      focus:outline-none focus:border-[#4d6bfe] focus:ring-[3px] focus:ring-[#4d6bfe]/15;
+  }
+  textarea.input { @apply leading-relaxed; }
+
+  /* ---- 表格 ---- */
+  .tbl { @apply w-full text-[13px] border-collapse; }
+  .tbl th {
+    @apply text-left text-[11.5px] font-semibold uppercase tracking-wide
+      text-slate-400 dark:text-slate-500 px-4 py-2.5
+      bg-slate-50/80 dark:bg-[#0a0f1c] border-b border-slate-200/80 dark:border-slate-800;
+  }
+  .tbl td {
+    @apply px-4 py-3 border-b border-slate-100 dark:border-slate-800/70 align-middle;
+  }
+  .tbl tbody tr { @apply transition-colors duration-100; }
+  .tbl tbody tr:hover { @apply bg-slate-50/70 dark:bg-slate-800/30; }
+  .tbl tbody tr:last-child td { @apply border-b-0; }
+
+  /* ---- 徽章 ---- */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2 py-[2px] rounded-full text-[11.5px] font-medium
+      bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400;
+  }
+  .badge-success { @apply bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400; }
+  .badge-failed { @apply bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-400; }
+  .badge-running { @apply bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400; }
+  .badge-running .dot { @apply w-1.5 h-1.5 rounded-full bg-current animate-pulse; }
+
+  /* ---- 提示条 ---- */
+  .callout {
+    @apply flex items-start gap-2.5 px-4 py-3 rounded-[12px] text-[13px]
+      bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300;
+  }
+  .callout-error { @apply bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300; }
+  .empty {
+    @apply py-14 text-center text-[13px] text-slate-400 dark:text-slate-500
+      border border-dashed border-slate-200 dark:border-slate-800 rounded-[14px];
+  }
+  .mono {
+    @apply font-mono text-[12px] px-1.5 py-0.5 rounded-md
+      bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300;
+  }
+  .crumb { @apply text-[12px] text-slate-400 dark:text-slate-500 mb-1.5 flex items-center gap-1.5; }
+  .crumb a { @apply text-slate-400 hover:text-[#4d6bfe] no-underline; }
+
+  .page-title { @apply text-[20px] font-semibold tracking-tight text-slate-900 dark:text-white; }
+  .section-title { @apply text-[13px] font-semibold text-slate-500 dark:text-slate-400; }
+
+  /* ---- 终端风报告块 ---- */
+  .report {
+    @apply rounded-[12px] p-5 overflow-auto max-h-[68vh] whitespace-pre-wrap break-words
+      text-[12.5px] leading-[1.75] font-mono
+      bg-[#0b1020] text-slate-200 border border-slate-800;
+  }
+}

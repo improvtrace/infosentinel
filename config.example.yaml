@@ -1,102 +1,26 @@
 # ============================================================
-# InfoSentinel 配置
+# InfoSentinel 引导配置(config.yaml)
 #
-# 四个模块,职责分离:
-#   sources  数据源(公用池):内置工具支撑,所有主题共用,可手动增删实例
-#   topics   主题:每项一段你撰写的 prompt,agent 据此生成报告
-#   targets  推送目标(通道):当前支持 email,可配置多个
-#   tasks    任务 = {主题, 推送目标, 调度表达式}
+# 本文件只保留部署相关的必要引导项:
+#   database  数据库位置(SQLite,业务配置的唯一事实源)
+#   log       日志文件与级别(JSON 行,同时输出到 stdout)
+#
+# 路径相对工作目录;运行时产物统一收在 .tests/ 下,
+# 部署时按实际环境在此修改(安装脚本不强制改写)。
+#
+# 业务配置(sources / topics / targets / tasks / llm / mailer / server)
+# 全部存于数据库,通过 Web 管理界面维护 —— 不再需要手改配置文件。
+#   首次初始化:migrate 子命令或首次启动时空库写入内置默认配置
+#   重置配置:停止服务 → 删除数据库文件 → 重启
+#   敏感数据:模型 API Key / SMTP 授权码可在界面填写(加密存储),
+#             也可通过环境变量注入(优先):
+#               DEEPSEEK_API_KEY / SMTP_PASSWORD
+#               INFOSENTINEL_ENCRYPT_KEY(加密主密钥,启用加密存储时必需)
 # ============================================================
 
-# ---- 数据源(公用池) ----
-sources:
-  # 采集通用参数
-  collect:
-    window_hours: 48          # 只保留最近 N 小时内的条目(RSS/HackerNews)
-    max_items_per_source: 15  # 单个工具单次返回的最大条目数
-    http_timeout_sec: 20      # 采集请求超时
-    max_body_chars: 4000      # 单条网页正文截断字符数
-    dedup_days: 7             # 已见过的 URL 在 N 天内不再重复出现
-    state_dir: "out/state"    # 每个任务的去重状态文件:<state_dir>/<task>.json
+database:
+  path: ".tests/data/infosentinel.db"
 
-  rss:                        # RSS/Atom 订阅 → fetch_rss 工具(同类多实例共用一个工具)
-    enabled: true
-    feeds:
-      - name: "CloudWeGo"
-        url: "https://www.cloudwego.io/zh/index.xml"
-      - name: "Hacker News 精选"
-        url: "https://hnrss.org/frontpage?points=100"
-
-  search:                     # DuckDuckGo 搜索 → search_web 工具(无需 API Key)
-    enabled: true
-    region: "cn-zh"           # wt-wt(全球)/ cn-zh / us-en 等
-    max_results: 8
-
-  hackernews:                 # Hacker News 热榜 → fetch_hackernews 工具
-    enabled: true
-    top_n: 15
-    min_points: 50
-
-  github_trending:            # GitHub Trending → fetch_github_trending 工具
-    enabled: true
-    language: "go"            # 留空表示全部语言
-    top_n: 10
-
-  webpages:                   # 固定网页 → fetch_webpage 工具按 URL 抓取;非空即启用
-    - name: "Go Release Notes"
-      url: "https://go.dev/doc/devel/release"
-
-# ---- 主题(每项一段 prompt,供任务引用) ----
-topics:
-  - name: "ai-agent"
-    prompt: |
-      关注 LLM 与 AI Agent 应用开发生态,重点:
-      - 新框架、新模型的发布与重要版本更新
-      - 值得借鉴的工程实践、评测结论与落地案例
-      报告用中文撰写,按要点分组,每条附一句话摘要与原文链接。
-
-  - name: "go-ecosystem"
-    prompt: |
-      关注 Go 语言与云原生生态,重点:
-      - Go 语言、运行时、工具链的动态与版本发布
-      - 核心框架与库的更新(如 CloudWeGo、Kubernetes 生态)
-      报告用中文撰写,按要点分组,每条附一句话摘要与原文链接。
-
-# ---- 推送目标(通道;当前支持 email,可配置多个) ----
-targets:
-  - name: "mailbox"
-    type: "email"
-    to: "me@example.com"          # 改成你的邮箱
-    subject_prefix: "[InfoSentinel]"
-  # 需要推送到第二个邮箱时,再添一项即可:
-  # - name: "work-mailbox"
-  #   type: "email"
-  #   to: "me@work.example.com"
-  #   subject_prefix: "[InfoSentinel][Work]"
-
-# ---- 任务:{主题, 推送目标, 调度表达式} ----
-tasks:
-  - name: "ai-agent-daily"
-    topic: "ai-agent"
-    targets: ["mailbox"]
-    schedules: ["0 8 * * *"]      # 每日 08:00;可写多个表达式,每个都会触发
-
-  - name: "go-weekly"
-    topic: "go-ecosystem"
-    targets: ["mailbox"]
-    schedules: ["0 9 * * 1"]      # 每周一 09:00
-
-# ---- 模型(全局,OpenAI 兼容协议)。切换服务商只需改 base_url + model + api_key_env ----
-llm:
-  base_url: "https://api.deepseek.com"
-  model: "deepseek-chat"
-  api_key_env: "DEEPSEEK_API_KEY"   # 从该环境变量读取 API Key
-  temperature: 0.3
-  timeout_sec: 300
-  max_step: 25
-
-# ---- 发送器(全局):dryrun = 生成邮件文件到 output_dir,不真正发送 ----
-# 后续接入 SMTP 时改为 type: "smtp" 并补充实现(见 .docs/development.md)
-mailer:
-  type: "dryrun"
-  output_dir: "out"
+log:
+  path: ".tests/logs/infosentinel.log"
+  level: "INFO"          # DEBUG / INFO / WARN / ERROR

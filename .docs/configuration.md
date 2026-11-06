@@ -1,111 +1,104 @@
 # InfoSentinel 配置参考
 
-配置文件默认为工作目录下的 `config.yaml`(可用 `-c` 指定),从 `config.example.yaml` 复制起步。
-配置分四个模块:**sources(公用数据源)/ topics(主题)/ targets(推送目标)/ tasks(任务)**,
-外加全局的 `llm` 与 `mailer`。
+## 两种配置,各司其职
 
-## sources — 公用数据源池
+| | 位置 | 内容 | 修改方式 |
+|---|---|---|---|
+| 引导配置 | `config.yaml`(安装后为 `<PREFIX>/config/config.yaml`) | `database.path`、`log.path`、`log.level` | 编辑文件后重启 |
+| 业务配置 | SQLite(`database.path`) | sources / topics / targets / tasks / llm / mailer / server | **Web 管理界面**,保存即生效 |
 
-数据源是公用的:所有主题共享;每类源由一个内置工具支撑,同类多实例共用该工具。
+> 数据库为空时(`infosentinel migrate` 或首次启动)自动写入**内置默认配置**
+> (1 个主题、1 个 email 目标、1 个每日任务、数据源开启搜索/RSS/HN/Trending)。
+> 默认值集中在 `backend/internal/repository/migrate/builtin.go`,业务配置的类型定义
+> 在 `backend/internal/repository/model.go` —— `config` 包只有引导配置。之后
+> config.yaml 不再承载业务配置。
 
-| 段 | 对应工具 | 字段 | 默认值 | 说明 |
-|---|---|---|---|---|
-| `collect` | — | `window_hours` | `48` | 时间窗:RSS / HN 只取最近 N 小时内条目 |
-| | | `max_items_per_source` | `15` | 单工具单次返回最大条目数 |
-| | | `http_timeout_sec` | `20` | 采集 HTTP 超时 |
-| | | `max_body_chars` | `4000` | `fetch_webpage` 正文截断字符数 |
-| | | `dedup_days` | `7` | 已采集 URL 的去重保留天数 |
-| | | `state_dir` | `"out/state"` | 去重状态目录,每任务一个文件 `<state_dir>/<task>.json` |
-| `rss` | `fetch_rss` | `enabled` | — | 启用时 `feeds[]` 必填;每项 `name`(工具参数用)+ `url` |
-| `search` | `search_web` | `enabled` | — | DuckDuckGo,无需 API Key |
-| | | `region` / `max_results` | `cn-zh` / `8` | 搜索区域 / 结果数 |
-| `hackernews` | `fetch_hackernews` | `enabled` | — | HN 热榜 |
-| | | `top_n` / `min_points` | `15` / `50` | 取前 N 条 / 最低分过滤 |
-| `github_trending` | `fetch_github_trending` | `enabled` | — | GitHub Trending |
-| | | `language` / `top_n` | 空 / `10` | 语言过滤(空=全部)/ 取前 N |
-| `webpages` | `fetch_webpage` | — | 空 | 固定网页列表(`name`+`url`),**非空即启用** |
+## 引导配置(config.yaml)
 
-> 至少启用一个数据源,否则启动报错。
-
-## topics — 主题
-
-每个主题就是一段你撰写的 prompt,agent 按它采集与撰写报告:
+路径相对工作目录,默认统一收在 `.tests/` 下(运行时依赖与输出);部署环境按需修改:
 
 ```yaml
-topics:
-  - name: "ai-agent"          # 唯一标识,任务用 topic 引用
-    prompt: |
-      关注 LLM 与 AI Agent 应用开发生态……   # 必填
+database:
+  path: ".tests/data/infosentinel.db"   # SQLite 文件,业务配置唯一事实源
+log:
+  path: ".tests/logs/infosentinel.log"  # JSON 行日志
+  level: "INFO"                         # DEBUG / INFO / WARN / ERROR
 ```
 
-校验:`name` 唯一且非空;`prompt` 必填。主题不含调度和目标——那是任务的事。
+## 业务配置字段
 
-## targets — 推送目标(通道)
+### sources — 公用数据源池
 
-```yaml
-targets:
-  - name: "mailbox"
-    type: "email"
-    to: "me@example.com"
-    subject_prefix: "[InfoSentinel]"     # 默认 [InfoSentinel]
-```
+| 段 | 对应工具 | 字段 | 默认值 |
+|---|---|---|---|
+| `collect` | — | `window_hours` / `max_items_per_source` / `http_timeout_sec` / `max_body_chars` / `dedup_days` / `state_dir` | 48 / 15 / 20 / 4000 / 7 / `.tests/data/state` |
+| `rss` | `fetch_rss` | `enabled`、`feeds[]{name,url}` | — |
+| `search` | `search_web` | `enabled`、`region`(cn-zh)、`max_results`(8) | — |
+| `hackernews` | `fetch_hackernews` | `enabled`、`top_n`(15)、`min_points`(50) | — |
+| `github_trending` | `fetch_github_trending` | `enabled`、`language`、`top_n`(10) | — |
+| `webpages` | `fetch_webpage` | `[]{name,url}`(非空即启用) | 空 |
 
-- 当前支持 `type: email`;可配置任意多个目标,任务里引用即推送到全部。
-- 新通道类型(webhook、IM 等)= 新增 `Pusher` 实现,配置面不变。
-- `name` 唯一;email 通道 `to` 必填。
+### topics — 主题
 
-## tasks — 任务:{主题, 推送目标, 调度表达式}
+`name`(唯一标识)+ `prompt`(agent 指令:关注什么、如何取舍、报告怎么写)。
 
-```yaml
-tasks:
-  - name: "ai-agent-daily"
-    topic: "ai-agent"
-    targets: ["mailbox"]                # 可多个
-    schedules: ["0 8 * * *"]            # 可多个,每个表达式独立触发
-```
+### targets — 推送目标
 
-校验:`name` 唯一;`topic`/`targets` 引用必须存在;`targets` 无重复;
-`schedules` 非空且每项为合法 cron 五段表达式(本地时区)。
+`name`、`type`(当前仅 `email`)、`to`(收件邮箱)、`subject_prefix`(默认 `[InfoSentinel]`)。
 
-**同一主题想要多时间推送**:一个任务写多个 schedules;想要不同目标各自节奏,
-就建多个任务引用同一主题。
+### tasks — 任务
 
-## llm — 模型服务(全局,OpenAI 兼容协议)
+`name`、`topic`(引用主题)、`targets[]`(引用目标,可多个)、`schedules[]`(cron 五段,可多条)。
+
+### llm — 模型(OpenAI 兼容)
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `base_url` | `https://api.deepseek.com` | 切换服务商只改这里(智谱 `https://open.bigmodel.cn/api/paas/v4`、OpenAI `https://api.openai.com/v1`、方舟 `https://ark.cn-beijing.volces.com/api/v3`) |
-| `model` | `"deepseek-chat"` | 模型名 |
-| `api_key_env` | `"DEEPSEEK_API_KEY"` | 读取 API Key 的环境变量名,Key 不落配置文件 |
-| `temperature` | `0.3` | 采样温度 |
-| `timeout_sec` | `300` | 单次模型请求超时(也是 serve 每轮任务的超时上限) |
-| `max_step` | `25` | ReAct 循环最大步数 |
+| `base_url` | `https://api.deepseek.com` | 智谱 `https://open.bigmodel.cn/api/paas/v4`、OpenAI `https://api.openai.com/v1`、方舟 `https://ark.cn-beijing.volces.com/api/v3` |
+| `model` | `deepseek-chat` | 模型名 |
+| `api_key_env` | `DEEPSEEK_API_KEY` | 环境变量名(优先级高于加密存储) |
+| `temperature` / `timeout_sec` / `max_step` | 0.3 / 300 / 25 | |
 
-## mailer — 发送器(全局)
+### mailer — 发送器
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `mailer.type` | `"dryrun"` | `dryrun` 落盘不发送;`smtp` 预留 |
-| `mailer.output_dir` | `"out"` | dry-run 邮件文件目录,命名 `email-<task>-<时间戳>.md` |
+| `type` | `dryrun` | `dryrun` 落盘预览 / `smtp` 真实发送 |
+| `output_dir` | `.tests/output` | dry-run 产物目录 |
+| `smtp.host` / `port` / `username` / `from` | — / 465 / — / — | 发件邮箱 |
+| `smtp.password_env` | `SMTP_PASSWORD` | 授权码环境变量名 |
+| `smtp.ssl` | 按端口 | 465 隐式 TLS;587 配 `false`(STARTTLS) |
 
-## 环境变量
+### server — 管理界面
 
-| 变量 | 说明 |
-|---|---|
-| `DEEPSEEK_API_KEY`(名可由 `llm.api_key_env` 改) | 模型 API Key,启动前必须设置 |
+`enabled`(默认 true)、`addr`(默认 `127.0.0.1:8080`,修改需重启)。
 
-## 最小可用配置
+## 敏感数据(加密存储)
 
-```yaml
-sources:
-  search: {enabled: true}
-topics:
-  - name: t
-    prompt: "关注 AI Agent 领域动态,中文输出。"
-targets:
-  - {name: m, type: email, to: "me@example.com"}
-tasks:
-  - {name: daily, topic: t, targets: [m], schedules: ["0 8 * * *"]}
-```
+两处密钥可在 Web 界面「配置 → 全局设置」填写,数据库中以 **AES-256-GCM 密文**保存:
 
-其余全部走默认值:dry-run 输出到 `out/`。
+| 名称 | 用途 | 对应环境变量 |
+|---|---|---|
+| `llm.api_key` | 模型 API Key | `llm.api_key_env`(默认 `DEEPSEEK_API_KEY`) |
+| `smtp.password` | SMTP 授权码 | `mailer.smtp.password_env`(默认 `SMTP_PASSWORD`) |
+
+- 解析顺序:**环境变量 → 数据库密文**;两者都缺失时报错并提示
+- 启用加密存储需设置主密钥:`INFOSENTINEL_ENCRYPT_KEY=<任意强随机串>`
+  (经 SHA-256 派生出 AES-256 密钥;**丢失主密钥将无法解密已存数据**)
+- 界面接口只回传密钥名称,不回传明文
+
+## 环境变量汇总
+
+| 变量 | 必需性 | 说明 |
+|---|---|---|
+| `DEEPSEEK_API_KEY`(名可配) | 运行任务必需 | 模型 API Key(可改用界面加密存储) |
+| `SMTP_PASSWORD`(名可配) | `mailer.type=smtp` 必需 | SMTP 授权码 |
+| `INFOSENTINEL_ENCRYPT_KEY` | 使用加密存储时必需 | 加密主密钥 |
+
+## 重置与迁移
+
+- **重置配置**:停止服务 → 删除数据库文件 → `infosentinel migrate` 或重启(重新写入内置默认配置)
+- **升级**:替换二进制即可;启动时自动执行版本化迁移(不删除已有数据)。
+  也可先单独执行 `infosentinel migrate`(或 `make migrate`)再启动
+- **回滚限制**:数据库被更高版本程序迁移后,旧程序拒绝启动;请恢复数据库备份
+- **迁移部署**:复制整个安装目录(主要是 `.tests/` 与 `config/`)

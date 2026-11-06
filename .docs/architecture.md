@@ -1,126 +1,168 @@
 # InfoSentinel 架构设计
 
-基于 [CloudWeGo Eino](https://github.com/cloudwego/eino)(v0.9.21)的 ReAct Agent,按"主题"自动采集资讯、总结报告并推送到多个目标。
+基于 CloudWeGo **Eino**(Agent)、**kratos**(HTTP / 应用生命周期 / 日志)、**google/wire**(依赖注入)、**ent + SQLite**(ORM / 迁移)的兴趣资讯收集服务。
 
-## 配置模型:四个模块
-
-```
-sources(公用数据源池)          topics(主题 = 一段 prompt)
-   ├─ rss.feeds[]                   ├─ ai-agent
-   ├─ search                        └─ go-ecosystem
-   ├─ hackernews                         │
-   ├─ github_trending                    │ 引用
-   └─ webpages[]                         │
-        │ 公用,所有主题共享               │
-        │                          targets(推送目标 / 通道)
-        │                             ├─ mailbox(email)
-        │                             └─ work-mailbox(email)
-        │                                  │
-        ▼                                  ▼
-┌───────────────────── 任务 = {主题, 推送目标, 调度表达式} ─────────────────────┐
-│  ai-agent-daily: topic=ai-agent  targets=[mailbox]  schedules=["0 8 * * *"]  │
-│  go-weekly:      topic=go-ecosystem targets=[mailbox] schedules=["0 9 * * 1"]│
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-设计原则:
-
-- **数据源是公用的**:数据源定义在全局 `sources` 模块,任何主题/任务都可用;
-  每类源由一个内置工具支撑,**同类多实例共用一个工具**(如所有 RSS feed 共用
-  `fetch_rss`,工具参数里指定要拉哪个源)。
-- **主题是外部 prompt**:主题就是一段用户撰写的指令,定义"关注什么、如何取舍、
-  报告怎么写"。同一主题可被多个任务以不同调度/目标复用。
-- **任务是组合单元**:`{topic, targets[], schedules[]}`,schedules 可写多个
-  cron 表达式,每个都会独立触发;targets 可写多个,报告会推送全部。
-
-## 总体架构
+## 分层与依赖方向
 
 ```
-┌──────────────────────────── cmd/infosentinel ─────────────────────────────────┐
-│  run(单次,可 -task 指定) / serve(常驻,任务×表达式注册到 cron) / list        │
-│  expect(LLM 交互式编辑配置:指令 → YAML 草案 → 本地校验 → diff 确认 → save)  │
-└───────┬───────────────────────────────────┬───────────────────────────────────┘
-        │ run                                │ serve
-        ▼                                   ▼
-┌── internal/runner ─────────── 每任务编排 ──────────────────────────────────────┐
-│ 1. 加载任务级去重状态  out/state/<task>.json                                   │
-│ 2. agent.BuildTools(sources) → 工具集 + 渠道说明(公用源,按任务注入状态)      │
-│ 3. agent.New(topic) → Eino ReAct Agent                                        │
-│ 4. Run(ctx) → Digest{标题, Markdown 正文}                                     │
-│ 5. 逐个推送到 task.targets(pusher.Push),全部成功才保存去重状态               │
-└───────┬──────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌── internal/agent ───────────── Eino ReAct Agent ──────────────────────────────┐
-│   system prompt = 角色 + 主题指令(topic.prompt) + 渠道说明 + 输出格式         │
-│          │                                                                     │
-│          ▼                                                                     │
-│   ┌─────────────┐   tool calls    ┌───────── 内置工具(数据源) ────────────┐   │
-│   │ ChatModel   │ ─────────────► │ fetch_rss            RSS/Atom 池        │   │
-│   │ (DeepSeek,  │                │ search_web           DuckDuckGo         │   │
-│   │  OpenAI 兼容)│               │ fetch_hackernews     HN Firebase API    │   │
-│   └─────────────┘                │ fetch_github_trending  GitHub Trending  │   │
-│          │                       │ fetch_webpage        eino-ext url loader│   │
-│          ▼                       └──────────────────────────────────────────┘   │
-│   Markdown 报告(首行=标题)                                                    │
-└────────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌── internal/pusher ──────────── 推送通道抽象 ───────────────────────────────────┐
-│  Pusher 接口 ← EmailPusher(当前 dry-run 落盘;SMTP 预留)                      │
-│  新通道(webhook / IM)= 新增 Pusher 实现 + target.type 注册,任务零改动       │
-└────────────────────────────────────────────────────────────────────────────────┘
+frontend/                  React SPA(Vite 构建,产物 go:embed 进二进制)
+   │  fetch /api/*
+   ▼
+backend/internal/server    kratos transport/http:路由 DSL + 访问日志 Filter + SPA 托管
+   │  依赖接口,不依赖实现
+   ▼
+backend/internal/repository   业务配置模型(model.go)+ 每表操作接口(repository.go 聚合)
+   ▲
+   │  ent ORM 实现(每表一文件)
+backend/internal/repository/data      ent client / 聚合读取 / 空库内置种子(ent 生成代码位于 data/ent)
+backend/internal/repository/schema    ent schema:表结构唯一事实源(手写)
+backend/internal/repository/migrate   版本化迁移执行器 + 内置默认配置(builtin.go)+ migrations 目录(内嵌)
+   ▼
+SQLite(.tests/data/infosentinel.db)
+
+业务编排:cmd → runner → agent(Eino)/ tools / pusher / scheduler / history
+横切能力:crypto(加密) · logger(kratos log) · secret(密钥解析)
 ```
+
+规则:handler 只做参数校验与编解码;业务规则在 repository(Config.Finalize / 校验);
+SQL 只存在于 `backend/internal/repository/data`(ent query)与
+`backend/internal/repository/migrate/migrations`(ent 生成的迁移 SQL)。
+业务配置的类型定义与校验集中在 `repository/model.go`;`config` 包只有引导配置
+(Bootstrap:数据库/日志路径),不含任何业务配置语义。
+
+## 依赖注入:google/wire(kratos 风格)
+
+静态依赖图(进程级单例)由 wire 编译期生成构造代码:
+
+```
+config.yaml ──► *config.Bootstrap ──┬─► logger(*klog.Helper, cleanup)
+                                    └─► *data.Data(迁移 + 空库种子, cleanup)
+                                            │ wire.Bind
+                                            ├─► repository.Repository / SecretRepository / ConfigRepository
+                                            ├─► *secret.Resolver
+                                            └─► newConfig → *repository.Config(初始快照)
+                                                    ▼
+                                     cmd/infosentinel.newApp ──► *kratos.App(serve)
+```
+
+- **ProviderSet 惯例**:各包 `provider.go`(`config` / `logger` / `repository/data` / `secret`),
+  cmd 层 `provider.go` 组装应用(`newConfig` / `newApp` / `newCLIApp`)
+- **注入器**:`cmd/infosentinel/wire.go`(`//go:build wireinject`)声明两个注入器,
+  `make wire` 生成 `wire_gen.go`:
+  - `initApp(cfgPath)` → serve 常驻应用(kratos app)
+  - `initCLI(cfgPath)` → run / list / migrate 所需依赖(cliApp:Boot/Data/Log/Secrets)
+- **动态依赖不进静态图**:runner / scheduler / pusher / agent 随数据库配置重建
+  (Web 界面保存 → `Apply()` 热生效),由 `newApp` 内的闭包按需构建
+- **wire CLI 兼容**:wire v0.6.0 锁定的 x/tools 与 Go 1.26 不兼容,
+  经 `hack/tools/tools.go` 以模块依赖引入并升级 x/tools(`go run` 从当前模块解析)
+
+## 配置存储:SQLite 唯一事实源
+
+```
+config.yaml(引导)                      Web 界面(frontend)
+  database.path ──► SQLite 文件            │ REST 写操作
+  log.path/level                           ▼
+        │                        server → repository(校验 → 落库)
+        │ 空库(migrate 或首次启动)        │
+        └──► 内置默认种子(migrate.Builtins)  └──► Apply():重载配置并重建调度(热生效)
+```
+
+- **业务配置表**:`topics` / `targets` / `tasks` / `settings`(sources/llm/mailer/server 四段 JSON)
+- **内置默认配置**:集中在 `repository/migrate/builtin.go`(类型即 `repository.Config`
+  字面量,含 `state_dir: .tests/data/state`、`output_dir: .tests/output`),
+  空库时由 `data.New()` 自动写入;`migrate` 子命令同样生效
+- **敏感数据表**:`secrets` —— value 为 AES-256-GCM 密文(`v1:` 前缀),明文不落库;
+  名称约定 `llm.api_key` / `smtp.password`。解析优先级:**环境变量 → 数据库密文**
+- **校验**:每次写操作先在内存组装整份配置并 `Finalize()`(引用存在 / cron 合法 /
+  名称唯一 / 至少一个数据源 / LLM 必填字段),通过才落库;模型层不填充默认值
+- **引用保护**:删除被任务引用的主题/目标返回 409 并列出引用它的任务
+
+## 数据库迁移
+
+ent 标准版本化迁移(Atlas 引擎),schema 与迁移同源:
+
+- **迁移目录**:`backend/internal/repository/migrate/migrations/`——每个版本一个
+  `<UTC时间戳>_<描述>.sql` + `atlas.sum` 校验和(go:embed 进二进制)
+- **生成**:改 `repository/schema` → `make gen`(ORM 代码 + Diff 函数)→
+  `make migrate-diff NAME=xxx`(内存库重放现有目录后与 schema 求差,追加迁移文件)
+- **执行**(atlas `migrate.Executor`,实现在 `backend/internal/repository/migrate`):
+  服务启动或 `infosentinel migrate` 时,按版本序执行未应用的迁移,版本记录写入
+  `atlas_schema_revisions`(Atlas CLI 兼容表);逐语句记录进度,中断可续跑;
+  `atlas.sum` 校验和不一致时报错,防止迁移文件被篡改
+- **旧库兼容**:早期版本用 ent 自动迁移建表、无版本记录,首次迁移自动以最新版本
+  为基线(baseline)采纳,不重复建表、数据保留
+- **版本高于目录**:数据库被更高版本程序迁移过后,旧程序拒绝启动
+
+操作入口:
+
+- 服务启动:`data.New()` → 版本化迁移 → 空库写入内置默认配置(`migrate.Builtins`)
+- 独立执行:`infosentinel migrate` / `make migrate`,初始化/升级数据库,
+  空库同时写入内置默认配置,可在升级部署前预执行
+
+新增表/字段:改 ent schema → `make gen`(ORM 代码)→
+`make migrate-diff NAME=xxx`(迁移文件)→ 启动时自动执行。
+已发布的迁移文件与 `atlas.sum` 不可修改或删除。
+
+## kratos 集成点
+
+| 能力 | 用法 |
+|---|---|
+| HTTP 传输 | `khttp.NewServer(khttp.Address(addr), khttp.Filter(accessLog))`;`srv.Route("/api")` + `GET/POST/PUT/DELETE("/path/{name}", handler)` |
+| 静态资源 | `srv.HandlePrefix("/", spaHandler)`(未命中回退 index.html) |
+| 日志 | `klog.NewHelper(klog.NewFilter(jsonLogger, klog.FilterLevel(...)))`,JSON 行落文件 + stdout |
+| 生命周期 | `kratos.New(kratos.Server(httpSrv), kratos.AfterStop(...))`;`app.Run()` 内置信号处理与优雅退出(wire 注入的 `newApp` 组装) |
 
 ## 一轮任务的执行流程
 
-1. **解析配置** `internal/config`:四模块加载、默认值、交叉引用校验
-   (任务引用的主题/目标必须存在、cron 表达式必须合法、名称唯一)。
-2. **任务状态**:`tools.SeenStore` 从 `out/state/<task>.json` 加载——
-   **每个任务独立去重**,主题 A 报道过的内容不会影响主题 B 的视角。
-3. **构建工具** `agent.BuildTools`:按 `sources` 开关实例化内置工具,
-   产出 `[]tool.BaseTool` 与 `[]Channel`(渠道说明,注入系统提示词)。
-4. **构建 Agent** `agent.New`:`openai.NewChatModel`(OpenAI 兼容,默认 DeepSeek)
-   + `react.NewAgent`(ReAct 循环,`MaxStep` 防失控)。
-5. **Agent 自主执行**:模型按主题指令决定调用哪些工具、参数、是否 `fetch_webpage`
-   深读,直到产出符合格式约定的报告(首行标题 + Markdown 正文)。
-6. **推送** `internal/pusher`:遍历 `task.targets`,逐个通道推送;
-   单个通道失败不影响其他通道,最后汇总报错。
-7. **状态持久化**:全部推送成功才把本轮 URL 写入状态文件,失败重跑不漏内容。
-
-## Eino 概念映射
-
-| 本项目 | Eino 概念 | 包 |
-|---|---|---|
-| `agent.New` 组装 | ReAct Agent(`react.NewAgent`) | `github.com/cloudwego/eino/flow/agent/react` |
-| DeepSeek 接入 | ChatModel 组件(`openai.ChatModelConfig{BaseURL, Model, APIKey}`) | `github.com/cloudwego/eino-ext/components/model/openai` |
-| 五个采集工具 | Invokable Tool(`utils.InferTool` 从结构体标签推导 JSON Schema) | `github.com/cloudwego/eino/components/tool/utils` |
-| 网页转文本 | Document Loader(`url.NewLoader` + `Load`) | `github.com/cloudwego/eino-ext/components/document/loader/url` |
+1. **API/调度触发** → `runner.RecordedJob`(防并发守卫 + 运行历史记录)
+2. **解析密钥** `secret.Resolver`:环境变量 → DB 密文(LLM API Key / SMTP 授权码)
+3. **构建工具** `agent.BuildTools`:按 `sources` 开关实例化内置工具(RSS/搜索/HN/Trending/网页)
+4. **Eino ReAct**:`react.NewAgent` 多轮决策 → Markdown 报告(首行标题)
+5. **推送** `pusher`:遍历任务目标,单目标失败不影响其他目标
+6. **状态**:全部推送成功才持久化任务级去重状态 `.tests/data/state/<task>.json`
+7. **埋点**:`task_run_done(task,duration,status,targets)`、`api_request(method,path,code,duration)`
 
 ## 关键设计决策
 
-- **工具错误不中断循环**:所有采集工具把错误序列化为 `{"error": ...}` 返回给 LLM,
-  由模型换渠道或降级,而不是让整轮任务失败。
-- **任务间状态隔离、公用工具**:工具实例按任务构建(注入各自的 SeenStore),
-  数据源配置本身公用;两个任务互不"抢"内容。
-- **采集与深读分离**:列表类工具只取标题+链接+摘要(控制 token),深读走
-  `fetch_webpage`(`max_body_chars` 截断)。
-- **单源失败不影响整体**:RSS 某个 feed 5xx 时以 `[feed error]` 条目回传;
-  推送阶段单目标失败不影响其他目标。
-- **推送通道接口化**:`Pusher` 接口 + 按 `target.type` 注册,多目标即多实例。
+- **配置与代码解耦**:业务配置的类型定义在 `repository/model.go`,默认值在
+  `repository/migrate/builtin.go`,运行值在数据库;`config` 包只剩引导项
+- **依赖注入编译期生成**:wire 保证构造顺序与清理函数配对,无运行时反射
+- **敏感数据静态加密**:Web 写入口令即加密;环境变量优先便于容器化部署
+- **repository 接口隔离**:server 依赖 `repository.Repository`,测试可注入假实现;
+  数据层未来可换 PostgreSQL 而不影响上层(ent dialect 切换 + 迁移)
+- **单二进制交付**:前端构建产物内嵌,安装包只有二进制 + 引导配置 + 脚本
+- **任务级隔离**:工具实例按任务构建(各自 SeenStore),数据源配置全局共用
+
+## 产物目录约定
+
+- `artifacts/`:编译产物 —— `artifacts/bin/`(本地二进制)、`artifacts/dist/`(安装包)
+- `.tests/`:运行时依赖与输出 —— 数据库、日志、去重状态、dry-run 邮件、覆盖率;
+  路径相对工作目录,部署环境在 config.yaml 覆盖
+- `frontend/dist/`:前端构建产物,`go:embed` 输入,随仓库提交
 
 ## 目录结构
 
 ```
-cmd/infosentinel/     入口:run / serve / list / expect
-internal/config/      四模块配置(sources/topics/targets/tasks)加载与校验
-internal/runner/      任务编排:状态 → 工具 → agent → 推送
-internal/agent/       Eino ReAct Agent(主题 prompt + 公用工具)
-internal/expect/      LLM 交互式配置编辑(REPL + 草案校验 + diff)
-internal/tools/       内置采集工具集 + SeenStore 去重状态
-internal/pusher/      推送通道抽象(email 实现,SMTP 预留)
-internal/scheduler/   cron 调度(任务 × 表达式,robfig/cron/v3)
-bin/                  编译产物(make build)
-out/                  运行产物:邮件文件、out/state/<task>.json 去重状态
-.docs/                项目文档(本目录)
+frontend/                   Vite + React + TS + Tailwind(页面/组件/类型化 API 客户端)
+backend/cmd/infosentinel/   入口:run / serve / list / migrate(kratos app)
+  provider.go               应用组装 Provider(newApp / newConfig / newCLIApp)
+  wire.go / wire_gen.go     wire 注入器声明(initApp / initCLI)与生成代码
+backend/cmd/migrate-diff/   生成版本化迁移文件(内存库重放求差)
+backend/internal/
+  server/                   kratos HTTP:REST API + SPA + 访问日志
+  repository/               业务配置模型(model.go)+ 每表操作接口(repository.go 聚合)
+    data/                   ent 实现(每表一文件)+ 空库内置种子 + 测试
+      ent/                  ent 生成代码(client / migrate Diff 函数)
+    schema/                 ent schema:表结构唯一事实源(手写)
+    migrate/                版本化迁移执行器(atlas Executor)+ 内置默认配置(builtin.go)
+      migrations/           <时间戳>_<描述>.sql + atlas.sum(内嵌,不可手改)
+  config/                   引导配置(Bootstrap:数据库/日志路径)
+  agent/ tools/ runner/     采集编排(Eino)
+  pusher/ scheduler/        推送与调度
+  history/ crypto/ logger/ secret/   支撑能力
+hack/                       gen / wire / migrate-diff / build / test / package / deploy
+  tools/tools.go            wire CLI 以模块依赖引入(Go 1.26 兼容)
+artifacts/                  编译产物(bin / dist),make clean 清理
+.tests/                     运行时依赖与输出(data / logs / output / out),make clean 保留
+.docs/                      文档
 ```

@@ -1,0 +1,25 @@
+[Unit]
+Description=InfoSentinel — Eino 兴趣资讯收集 Agent
+Documentation=https://github.com/improvtrace/infosentinel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PREFIX__
+User=infosentinel
+Group=infosentinel
+ExecStart=__PREFIX__/bin/infosentinel -c __PREFIX__/config/config.yaml serve
+Restart=on-failure
+RestartSec=5
+# 环境文件:DEEPSEEK_API_KEY / SMTP_PASSWORD / INFOSENTINEL_ENCRYPT_KEY 等
+EnvironmentFile=-__PREFIX__/config/env
+
+# 安全加固
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=__PREFIX__/.tests
+
+[Install]
+WantedBy=multi-user.target

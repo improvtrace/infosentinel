@@ -2,157 +2,154 @@
 
 ## 环境要求
 
-- Go ≥ 1.24(开发环境为 Go 1.26)
-- 网络可访问:所配的 LLM 服务、RSS 源、`hacker-news.firebaseio.com`、`github.com/trending`
-  - 依赖拉取走 Go 模块代理,国内建议 `GOPROXY=https://goproxy.cn,direct`
-  - DuckDuckGo 搜索在部分网络环境下不可达:工具会以 `{"error": ...}` 回传,
-    Agent 自动换渠道,不影响整轮任务;确认不可用可在配置中 `search.enabled: false`
+- Go ≥ 1.24(开发环境 1.26)
+- Node.js ≥ 18 + npm(前端构建)
+- 网络:LLM 服务、RSS 源、`hacker-news.firebaseio.com`、`github.com/trending`
 
 ## 构建与运行
 
-统一通过 Makefile(产物位置:二进制在 `bin/`,运行数据在 `out/`):
-
 ```bash
-# 获取依赖 / 构建(产物:bin/infosentinel,自动注入 git 版本号)
-make tidy
-make build
-
-# 准备配置与密钥
-cp config.example.yaml config.yaml   # 编辑 topics prompt、targets 收件箱、tasks 调度
-export DEEPSEEK_API_KEY=sk-...       # 或你在 llm.api_key_env 里指定的变量名
-
-# 查看配置概览:主题 / 推送目标 / 任务
-./bin/infosentinel list
-
-# 执行任务;会自动先编译
-make run                             # 全部任务
-make run ARGS="-task ai-agent-daily" # 只跑指定任务
-
-# 常驻运行,按各任务 schedules 定时执行
-make serve
-
-# 指定配置文件 / 覆盖版本号 / 查看全部命令
-./bin/infosentinel -c /path/to/config.yaml run -task go-weekly
-make build VERSION=v1.0.0
-make help
+make gen        # 生成 ent 代码(schema → ent;改动 schema 后必须执行)
+make migrate-diff NAME=add_tags   # schema 变更后生成版本化迁移文件
+make frontend   # 前端构建(npm ci + vite build → frontend/dist)
+make wire       # 生成 wire 依赖注入代码(依赖图变更后执行)
+make build      # 编译 artifacts/bin/infosentinel(前端内嵌,注入 git 版本)
+make serve      # 启动(空库自动写入内置默认配置)
+make run ARGS="-task ai-name"   # 单轮执行
+make migrate    # 初始化/升级数据库;空库写入内置默认配置后退出
+make package    # 一键打包 artifacts/dist/infosentinel-<ver>-<os>-<arch>.tar.gz
+make check      # vet + test + build
+make clean      # 清理 artifacts/(保留 .tests/ 运行数据)
 ```
 
-dry-run 模式下,邮件输出为 `out/email-<task>-<时间戳>.md`,文件头部的 HTML 注释
-包含 `To` / `Subject` / `Task`,可直接预览效果。多任务多目标时每个推送
-各生成一个文件。
+`make help` 查看全部目标。脚本实现位于 `hack/`(gen/wire/migrate-diff/build/test/package)与
+`hack/deploy/`(install/uninstall/systemd)。
 
-## 测试与静态检查
+## 目录与分层约定
 
-```bash
-make check   # 提交前完整校验:vet + test + build
-make test    # 等价 go test -race ./...
-make vet     # 等价 go vet ./...
-make cover   # 覆盖率报告写入 out/coverage.out
-make fmt     # gofmt -s 格式化
-make clean   # 清理 bin/ 与覆盖率(不影响 out/ 下的运行数据)
-```
-
-测试不依赖外网与真实 API Key:RSS / HN / GitHub Trending / 网页工具均用
-`httptest` 起本地 mock 服务验证;配置校验用例覆盖交叉引用与 cron 合法性。
-
-## 配置速记
-
-- **新主题** = `topics` 加一段 prompt → `tasks` 里引用它。
-- **推送到更多邮箱** = `targets` 加 email 目标 → 任务的 `targets` 列表里追加名字。
-- **同主题多节奏** = 一个任务写多个 `schedules`,或多个任务复用同一 `topic`。
-- **加数据源** = `sources` 里启用/增删实例(如 rss 加 feed),所有主题立即可用。
-- 全字段说明见 [configuration.md](configuration.md)。
-- 不想手改 YAML?用 `./bin/infosentinel expect` 用自然语言编辑(见下节)。
-
-## expect:LLM 交互式配置编辑
-
-`expect` 启动一个 REPL 会话,把自然语言指令转成配置修改:
-
-```bash
-./bin/infosentinel expect
-# expect> 加一个 RSS 源:名字"阮一峰的网络日志" url https://www.ruanyifeng.com/blog/atom.xml
-# expect> 把 ai-agent-daily 的调度改成每周一和周四的 9 点
-# expect> save
-```
-
-工作方式(`internal/expect`):
-
-1. 每条指令连同**当前配置全文**发给 LLM,要求其输出修改后的完整 YAML(单个 ```yaml 代码块);
-2. 提取代码块后用 `config.Parse` 在本地做解析 + 默认值 + 交叉引用/cron 校验,
-   不通过时把错误回传给模型自动重试(最多 3 次);
-3. 通过后展示**行级 diff**(内置 LCS 实现,无外部依赖),确认 `y` 才应用到内存;
-4. `save` 写回前自动备份原文件为 `<config>.bak`;`show`/`diff`/`reset`/`quit` 管理会话状态;
-5. 会话保留最近 12 条对话消息,支持"再把时间改到 9 点"这类增量表述。
-
-安全设计:任何修改都不会直接落盘——必须经过校验 + diff + 确认 + save 四道关;
-LLM 无法触达 expect 会话之外的能力(没有工具、没有文件写权限)。
-
-## 切换 LLM 服务
-
-所有走 OpenAI 兼容协议的服务只需改三处配置(代码零改动):
-
-```yaml
-llm:
-  base_url: "https://open.bigmodel.cn/api/paas/v4"   # 智谱 GLM
-  model: "glm-4.6"
-  api_key_env: "ZHIPU_API_KEY"
-```
-
-| 服务 | base_url | 模型示例 |
+| 目录 | 职责 | 约束 |
 |---|---|---|
-| DeepSeek(默认) | `https://api.deepseek.com` | `deepseek-chat` |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4.6` |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| 火山方舟 | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-...` |
+| `frontend/src` | SPA 页面组件 | 只通过 `src/api.ts` 调 `/api/*` |
+| `backend/internal/server` | kratos HTTP handler | 不写 SQL、不做存储细节 |
+| `backend/internal/repository` | 业务配置模型(model.go)+ 每表操作接口(一表一文件) | 上层只依赖接口与模型类型 |
+| `backend/internal/repository/data` | ent 实现(每表一文件)+ 空库内置种子 | 唯一允许出现 ent/DB 代码的位置 |
+| `backend/internal/repository/data/ent` | ent 生成代码 | 不手改;`make gen` 重新生成 |
+| `backend/internal/repository/schema` | ent schema:表结构唯一事实源(手写) | 改完执行 `make gen` + `make migrate-diff` |
+| `backend/internal/repository/migrate` | 版本化迁移执行器 + 内置默认配置(builtin.go)+ migrations 目录 | migrations/ 文件与 atlas.sum 不可手改 |
+| `backend/cmd/migrate-diff` | 迁移文件生成工具 | 经 `make migrate-diff NAME=xxx` 调用 |
+| `backend/cmd/infosentinel/provider.go` | 应用组装 Provider(newApp / newCLIApp) | 动态依赖(runner/scheduler)不进静态 wire 图 |
+| `backend/cmd/infosentinel/wire.go` | wire 注入器声明(initApp / initCLI) | 依赖图变更后 `make wire` 重新生成 |
+| `backend/internal/{agent,tools,runner,...}` | 业务编排 | 通过构造参数注入依赖 |
 
-## 接入真实邮件发送(SMTP)
+新增表的标准流程:
 
-当前 `mailer.type: dryrun` 只落盘。接 SMTP 的步骤:
+1. `repository/schema/<table>.go` 定义字段与唯一键
+2. `make gen` 生成 ent ORM 代码(含 Diff 函数)
+3. `make migrate-diff NAME=add_tags` 生成迁移文件(`<时间戳>_add_tags.sql` + atlas.sum)
+4. `repository/` 增加接口(或扩展已有接口文件)
+5. `repository/data/<table>.go` 实现(参考 topic.go 的 upsert / 引用检查写法)
+6. 需要初始数据则在 `repository/migrate/builtin.go` 的 `Builtins()` 中补充内置默认配置
 
-1. `internal/pusher/pusher.go` 中 `EmailPusher.Push` 的 smtp 分支目前返回
-   "尚未实现";在 `internal/pusher/` 新增 `smtp.go` 补上实现(host/port/
-   username/password 授权码,密码走环境变量),可用 `gopkg.in/mail.v2`;
-2. 配置 `mailer.type: smtp` 并补充 `mailer.smtp` 段;
-3. (可选)正文 Markdown → HTML 转换,可用 `github.com/russross/blackfriday/v2`。
+## 数据库迁移
 
-QQ 邮箱 / 163 / Gmail 均支持 SMTP 授权码方式,注意各家发信频率限制。
+ent 标准版本化迁移(Atlas 引擎),`sql/versioned-migration` 特性已开启:
 
-## 新增推送通道
+```bash
+make gen                  # 1. 生成 ORM 代码(schema 变更后)
+make migrate-diff NAME=add_tags   # 2. 生成迁移文件(内存库重放求差,不碰真实数据库)
+make migrate              # 3. 验证:应用迁移(空库写入内置默认配置)后退出
+```
 
-1. 在 `internal/pusher/` 新增实现,实现 `Pusher` 接口:
-   `Push(ctx, *Message) error`(`Message` 含 Task/Subject/Body);
-2. 在 `pusher.New` 的 switch 中按新的 `target.type` 注册;
-3. 在 `internal/config` 的 Target 校验白名单中加入该类型,并在 `targets` 中配置。
+- 迁移目录:`backend/internal/repository/migrate/migrations/`——
+  `<UTC时间戳>_<描述>.sql` + `atlas.sum`(go:embed 进二进制)
+- 执行:`backend/internal/repository/migrate`(包 `migrate`)用 atlas
+  `migrate.Executor` 按版本序执行未应用迁移,版本记录在
+  `atlas_schema_revisions`(Atlas CLI 兼容表);逐语句记录进度,中断可续跑;
+  校验和不一致时报错
+- 已发布的迁移文件与 atlas.sum 不可修改/删除;数据库版本高于迁移目录时拒绝启动
+- 旧库兼容:早期自动迁移建的库无版本记录,首次迁移自动以最新版本为基线采纳
+- 测试见 `backend/internal/repository/migrate/migrate_test.go`(新库、幂等、
+  旧库采纳、未来版本拒绝、目录完整性、版本记录读写)
 
-## 新增数据源(工具)
+## 前端开发
 
-1. 在 `internal/tools/` 新建文件,参考 `rss.go` 的模式:
+```bash
+cd frontend
+npm run dev     # Vite 开发服务器,/api 代理到 127.0.0.1:8080
+npm run build   # tsc --noEmit + vite build
+```
 
-   ```go
-   type myParams struct {
-       Topic string `json:"topic" jsonschema_description:"..."`
-   }
-   func (t *myTool) invoke(ctx context.Context, p *myParams) (string, error) {
-       // 采集 → 过滤(时间窗/去重:t.store.Filter/Mark)→ friendlyResult(...) 返回
-   }
-   return utils.InferTool("my_tool", "工具描述(给 LLM 看,写清楚何时该用)", t.invoke)
-   ```
+- 技术栈:React 18 + TypeScript(strict)+ Tailwind 3 + react-router-dom
+- 设计体系:`src/index.css` 中的组件类(`.card` `.btn` `.tbl` `.badge` `.sidebar` 等),
+  深色模式为 `prefers-color-scheme` 自动;图标为 `src/components/icons.tsx` 内联 SVG
+- 全局反馈:`useToast()` 提供 `ok()/err()`
 
-2. `internal/config` 的 `Sources` 增加对应配置段与开关 + 校验;
-3. 在 `internal/agent/BuildTools` 中按开关注册并生成 `Channel` 说明(含实例清单),
-   系统提示词会自动列出。
+## REST API(kratos 路由)
 
-约定:工具永不返回 Go 层 error(网络失败等以 `{"error": ...}` JSON 返回),
-避免打断 ReAct 循环。
+| 端点 | 说明 |
+|---|---|
+| `GET /api/overview` | 概览统计 / 下次触发 / 最近运行 / 推送目标 |
+| `GET /api/config` | 当前生效配置 |
+| `GET/POST /api/topics` · `PUT/DELETE /api/topics/{name}` | 主题 CRUD |
+| `GET/POST /api/targets` · `PUT/DELETE /api/targets/{name}` | 推送目标 CRUD |
+| `POST /api/targets/{name}/test` | 发送测试邮件 |
+| `GET/POST /api/tasks` · `PUT/DELETE /api/tasks/{name}` | 任务 CRUD |
+| `POST /api/tasks/{name}/run` | 手动触发(运行中 409) |
+| `GET/PUT /api/sources` | 数据源(YAML) |
+| `GET /api/settings` · `PUT /api/settings/{llm\|mailer\|server}` | 全局设置 |
+| `GET /api/secrets` · `PUT/DELETE /api/secrets/{name}` | 密钥名称 / 加密保存 / 删除 |
+| `POST /api/apply` | 手动重载配置并重建调度 |
+| `GET /api/runs?task=&limit=` · `GET /api/runs/{id}` | 运行历史 |
+| `GET /api/emails` · `GET /api/emails/{name}` | dry-run 邮件产物 |
+| `GET /api/healthz` | 健康状态 |
+
+写操作语义:整份配置 `Finalize()` 校验 → 落库 → 自动 `Apply()` 热生效;
+校验失败 400 且不落库;应用失败 200 + `{"ok":true,"applied":false,"warning":...}`。
+
+## 日志与埋点
+
+- 输出:JSON 行 → `log.path` + stdout(kratos log)
+- 事件:`startup` `database_seeded` `scheduler_started` `scheduler_applied`
+  `task_run_done` `task_run_failed` `api_request` `secret_saved` `shutdown`
+- 字段约定见 `backend/internal/logger` 的 `Key*` 常量;调用示例:
+  `lg.Infow("task_run_done", logger.KeyTask, name, logger.KeyStatus, "success")`
+
+## 测试
+
+```bash
+make test    # go test -race ./...
+```
+
+- `data`:空库自动内置种子(`Seeded`/`LoadConfig` 回读)、`SeedFromConfig` 整体替换、引用保护、密钥加密落库与解密
+- `repository`:配置模型校验表驱动(`model_test.go`);`migrate`:内置默认配置(`builtin_test.go`)
+- `crypto`:往返加解密、错误主密钥、缺少主密钥
+- `logger`:JSON 行格式与级别
+- `tools`:采集工具用 httptest mock;`runner`:并发守卫
+- 不依赖外网与真实密钥
+
+## 部署与运维
+
+```bash
+make package
+sudo tar -xzf artifacts/dist/infosentinel-*.tar.gz -C /tmp && cd /tmp/infosentinel-*/
+sudo ./scripts/install.sh            # → /usr/local/infosentinel(创建 infosentinel 系统用户)
+sudo systemctl start infosentinel
+sudo ./scripts/uninstall.sh [--purge]
+```
+
+- 目录:`bin/ config/ .tests/`(运行时路径由 config.yaml 决定,默认 .tests/...;见 README)
+- systemd 单元使用 `User=infosentinel`,环境变量文件 `/usr/local/infosentinel/config/env`
+  (`DEEPSEEK_API_KEY=...` / `INFOSENTINEL_ENCRYPT_KEY=...`)
+- 升级:替换二进制后重启(自动迁移);可先执行 `infosentinel migrate` 预检/预迁移;
+  回滚:保留旧二进制即可(若新版本已升级数据库,旧程序会拒绝启动以避免破坏数据)
+- 日志:`journalctl -u infosentinel -f` 或 `.tests/logs/infosentinel.log`
 
 ## 常见问题
 
-- **`环境变量 DEEPSEEK_API_KEY 未设置`**:启动前 export 对应变量;变量名可配。
-- **某个任务总失败**:`serve` 下单任务失败不影响其他任务;先用
-  `./bin/infosentinel run -task <name>` 单独排查。
-- **搜索工具总是返回 error**:多为网络到 DuckDuckGo 不通,关掉 `search.enabled` 或配代理
-  (`internal/tools/search.go` 中 `ddgsearch.Config{Proxy: ...}`)。
-- **某任务内容重复 / 为空**:去重状态按任务隔离在 `out/state/<task>.json`;
-  删除该文件可重置该任务的状态。反之内容总重复,确认 `dedup_days` 足够长。
-- **serve 没有按预期触发**:`schedules` 为本地时区的五段 cron;用
-  `crontab.guru` 类工具校验表达式;启动日志会打印每个 (任务, 表达式) 的下次触发时间。
+- **界面报“前端资产未构建”**:执行 `make frontend` 后重新 `make build`
+- **加密保存失败**:未设置 `INFOSENTINEL_ENCRYPT_KEY`;设置后重启服务
+- **解密失败(主密钥不匹配)**:加密主密钥被更换;恢复原主密钥或删除并重新填写密钥
+- **改了 config.yaml 业务字段无效**:业务配置在数据库;请用界面修改或删库重启
+- **任务总失败**:`./artifacts/bin/infosentinel run -task <name>` 单独排查;看结构化日志的 `task_run_failed`
+- **DuckDuckGo 不可达**:关闭 `search.enabled` 或为 `ddgsearch` 配置代理
+- **serve 未按预期触发**:cron 为本地时区五段表达式;启动日志含 `schedule_registered`(next 时间)
