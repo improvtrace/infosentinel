@@ -17,6 +17,10 @@ type Bootstrap struct {
 	Database BootstrapDatabase `yaml:"database"`
 	// Log 是日志输出配置。
 	Log BootstrapLog `yaml:"log"`
+	// Storage 是产物空间引导项(本地磁盘根目录;SFTP/FTP 的基础目录存于数据库全局设置)。
+	Storage BootstrapStorage `yaml:"storage"`
+	// StateDir 是运行时状态目录(采集去重记录,每个任务一个 <task>.json)。
+	StateDir string `yaml:"state_dir"`
 }
 
 // BootstrapDatabase 是数据库引导项。
@@ -33,13 +37,21 @@ type BootstrapLog struct {
 	Level string `yaml:"level"`
 }
 
+// BootstrapStorage 是产物空间引导项。
+type BootstrapStorage struct {
+	// BaseDir 是本地磁盘产物根目录(推荐绝对路径)。
+	// 页面配置的产物路径(storage.path)相对本目录。
+	BaseDir string `yaml:"base_dir"`
+}
+
 // 引导项默认值(相对于工作目录;运行时产物统一收在 .tests/ 下,
 // 部署环境在 config.yaml 覆盖为实际路径)。
 const (
-	DefaultDBPath    = ".tests/data/infosentinel.db"
-	DefaultLogPath   = ".tests/logs/infosentinel.log"
-	DefaultLogLevel  = "INFO"
-	BootstrapFileEnv = "INFOSENTINEL_CONFIG"
+	DefaultDBPath         = ".tests/data/infosentinel.db"
+	DefaultLogPath        = ".tests/logs/infosentinel.log"
+	DefaultLogLevel       = "INFO"
+	DefaultStorageBaseDir = ".tests/artifacts"
+	DefaultStateDir       = ".tests/data/state"
 )
 
 // LoadBootstrap 读取并校验引导配置。
@@ -71,5 +83,11 @@ func (b *Bootstrap) applyDefaults() {
 	}
 	if b.Log.Level == "" {
 		b.Log.Level = DefaultLogLevel
+	}
+	if b.Storage.BaseDir == "" {
+		b.Storage.BaseDir = DefaultStorageBaseDir
+	}
+	if b.StateDir == "" {
+		b.StateDir = DefaultStateDir
 	}
 }

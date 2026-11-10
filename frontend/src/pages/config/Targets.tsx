@@ -36,21 +36,21 @@ export default function Targets() {
   return (
     <div>
       <Callout msg={msg} err={err} />
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-slate-500 m-0">报告推送的通道;被任务引用的目标不可删除。真实投递需在"全局设置"中启用 SMTP。</p>
-        <button className="btn btn-sm" onClick={() => setParams({ edit: 'new' })}>+ 新建</button>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12.5px] text-ghost m-0">报告推送的通道;被订阅引用的目标不可删除。真实投递需在"全局设置"中启用 SMTP。</p>
+        <button className="btn btn-sm shrink-0" onClick={() => setParams({ edit: 'new' })}>新建</button>
       </div>
       {items.length > 0 ? (
         <div className="card overflow-x-auto"><table className="tbl">
-          <thead><tr><th>名称</th><th>通道</th><th>地址</th><th>被引用</th><th>操作</th></tr></thead>
+          <thead><tr><th>名称</th><th>通道</th><th>地址</th><th>被引用</th><th className="text-right">操作</th></tr></thead>
           <tbody>
             {items.map((t) => (
               <tr key={t.name}>
-                <td><b>{t.name}</b></td>
+                <td className="font-medium">{t.name}</td>
                 <td><span className="mono">{t.type}</span></td>
-                <td>{t.to}</td>
-                <td>{t.used_by ?? 0} 个任务</td>
-                <td className="whitespace-nowrap">
+                <td className="text-dim">{t.to}</td>
+                <td className="text-dim">{t.used_by ?? 0} 个订阅</td>
+                <td className="whitespace-nowrap text-right">
                   <button className="btn btn-ghost btn-sm" onClick={() => setParams({ edit: t.name })}>编辑</button>{' '}
                   <button className="btn btn-danger btn-sm" onClick={() => remove(t.name)}>删除</button>
                 </td>
@@ -58,7 +58,7 @@ export default function Targets() {
             ))}
           </tbody>
         </table></div>
-      ) : <Empty>还没有推送目标;新建一个 email 目标,然后在任务里引用它</Empty>}
+      ) : <Empty>还没有推送目标;新建一个 email 目标,然后在订阅里引用它</Empty>}
     </div>
   )
 }
@@ -109,27 +109,27 @@ function TargetForm({ editing, onDone }: { editing: string; onDone: () => void }
       >
         {isNew ? (
           <>
-            <label className="label">名称(唯一标识,任务用它引用;保存后不可改)</label>
+            <label className="field-label">名称(唯一标识,订阅用它引用;保存后不可改)</label>
             <input className="input" value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="如 mailbox" />
           </>
         ) : (
           <>
-            <label className="label">名称</label>
+            <label className="field-label">名称</label>
             <span className="mono">{editing}</span>
           </>
         )}
-        <label className="label">通道类型</label>
+        <label className="field-label">通道类型</label>
         <select className="input" value={t.type} onChange={(e) => setT({ ...t, type: e.target.value })}>
           <option value="email">email</option>
         </select>
-        <label className="label">收件邮箱</label>
+        <label className="field-label">收件邮箱</label>
         <input className="input" value={t.to} onChange={(e) => setT({ ...t, to: e.target.value })} placeholder="me@example.com" />
-        <label className="label">标题前缀</label>
+        <label className="field-label">标题前缀</label>
         <input className="input" value={t.subject_prefix} onChange={(e) => setT({ ...t, subject_prefix: e.target.value })} placeholder="[InfoSentinel]" />
-        <div className="flex items-center gap-3 mt-4 flex-wrap">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button className="btn" disabled={saving} type="submit">保存</button>
           <button className="btn btn-ghost" type="button" onClick={onDone}>取消</button>
-          <span className="text-xs text-slate-500">保存即校验并热生效;真实投递需在"全局设置"中启用 SMTP</span>
+          <span className="text-[12px] text-ghost">保存即校验并热生效;真实投递需在"全局设置"中启用 SMTP</span>
         </div>
       </form>
     </div>

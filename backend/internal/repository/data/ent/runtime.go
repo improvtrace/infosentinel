@@ -5,8 +5,9 @@ package ent
 import (
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/secret"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/setting"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscription"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscriptionrun"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/target"
-	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/task"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/topic"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/schema"
 )
@@ -49,6 +50,102 @@ func init() {
 	settingDescValue := settingFields[1].Descriptor()
 	// setting.ValueValidator is a validator for the "value" field. It is called by the builders before save.
 	setting.ValueValidator = settingDescValue.Validators[0].(func(string) error)
+	subscriptionFields := schema.Subscription{}.Fields()
+	_ = subscriptionFields
+	// subscriptionDescTopic is the schema descriptor for topic field.
+	subscriptionDescTopic := subscriptionFields[0].Descriptor()
+	// subscription.TopicValidator is a validator for the "topic" field. It is called by the builders before save.
+	subscription.TopicValidator = func() func(string) error {
+		validators := subscriptionDescTopic.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(topic string) error {
+			for _, fn := range fns {
+				if err := fn(topic); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// subscriptionDescCron is the schema descriptor for cron field.
+	subscriptionDescCron := subscriptionFields[1].Descriptor()
+	// subscription.CronValidator is a validator for the "cron" field. It is called by the builders before save.
+	subscription.CronValidator = subscriptionDescCron.Validators[0].(func(string) error)
+	subscriptionrunFields := schema.SubscriptionRun{}.Fields()
+	_ = subscriptionrunFields
+	// subscriptionrunDescTopic is the schema descriptor for topic field.
+	subscriptionrunDescTopic := subscriptionrunFields[0].Descriptor()
+	// subscriptionrun.TopicValidator is a validator for the "topic" field. It is called by the builders before save.
+	subscriptionrun.TopicValidator = func() func(string) error {
+		validators := subscriptionrunDescTopic.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(topic string) error {
+			for _, fn := range fns {
+				if err := fn(topic); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// subscriptionrunDescTrigger is the schema descriptor for trigger field.
+	subscriptionrunDescTrigger := subscriptionrunFields[1].Descriptor()
+	// subscriptionrun.TriggerValidator is a validator for the "trigger" field. It is called by the builders before save.
+	subscriptionrun.TriggerValidator = func() func(string) error {
+		validators := subscriptionrunDescTrigger.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(trigger string) error {
+			for _, fn := range fns {
+				if err := fn(trigger); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// subscriptionrunDescStatus is the schema descriptor for status field.
+	subscriptionrunDescStatus := subscriptionrunFields[2].Descriptor()
+	// subscriptionrun.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	subscriptionrun.StatusValidator = func() func(string) error {
+		validators := subscriptionrunDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// subscriptionrunDescDuration is the schema descriptor for duration field.
+	subscriptionrunDescDuration := subscriptionrunFields[5].Descriptor()
+	// subscriptionrun.DefaultDuration holds the default value on creation for the duration field.
+	subscriptionrun.DefaultDuration = subscriptionrunDescDuration.Default.(int64)
+	// subscriptionrunDescError is the schema descriptor for error field.
+	subscriptionrunDescError := subscriptionrunFields[6].Descriptor()
+	// subscriptionrun.DefaultError holds the default value on creation for the error field.
+	subscriptionrun.DefaultError = subscriptionrunDescError.Default.(string)
+	// subscriptionrunDescSubject is the schema descriptor for subject field.
+	subscriptionrunDescSubject := subscriptionrunFields[7].Descriptor()
+	// subscriptionrun.DefaultSubject holds the default value on creation for the subject field.
+	subscriptionrun.DefaultSubject = subscriptionrunDescSubject.Default.(string)
+	// subscriptionrunDescBody is the schema descriptor for body field.
+	subscriptionrunDescBody := subscriptionrunFields[8].Descriptor()
+	// subscriptionrun.DefaultBody holds the default value on creation for the body field.
+	subscriptionrun.DefaultBody = subscriptionrunDescBody.Default.(string)
 	targetFields := schema.Target{}.Fields()
 	_ = targetFields
 	// targetDescName is the schema descriptor for name field.
@@ -83,30 +180,6 @@ func init() {
 	targetDescSubjectPrefix := targetFields[3].Descriptor()
 	// target.DefaultSubjectPrefix holds the default value on creation for the subject_prefix field.
 	target.DefaultSubjectPrefix = targetDescSubjectPrefix.Default.(string)
-	taskFields := schema.Task{}.Fields()
-	_ = taskFields
-	// taskDescName is the schema descriptor for name field.
-	taskDescName := taskFields[0].Descriptor()
-	// task.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	task.NameValidator = func() func(string) error {
-		validators := taskDescName.Validators
-		fns := [...]func(string) error{
-			validators[0].(func(string) error),
-			validators[1].(func(string) error),
-		}
-		return func(name string) error {
-			for _, fn := range fns {
-				if err := fn(name); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
-	// taskDescTopic is the schema descriptor for topic field.
-	taskDescTopic := taskFields[1].Descriptor()
-	// task.TopicValidator is a validator for the "topic" field. It is called by the builders before save.
-	task.TopicValidator = taskDescTopic.Validators[0].(func(string) error)
 	topicFields := schema.Topic{}.Fields()
 	_ = topicFields
 	// topicDescName is the schema descriptor for name field.

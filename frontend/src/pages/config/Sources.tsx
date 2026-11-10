@@ -32,7 +32,7 @@ export default function Sources() {
   return (
     <div>
       <Callout msg={msg} err={err} />
-      <p className="text-xs text-slate-500">
+      <p className="text-[12.5px] leading-relaxed text-ghost">
         公用数据源池(YAML 编辑):rss / search / hackernews / github_trending / webpages,以及采集通用参数 collect。
         所有主题共享;保存时整份配置校验。
       </p>
@@ -44,14 +44,14 @@ export default function Sources() {
         }}
       >
         <textarea
-          className="input font-mono text-xs min-h-[320px] leading-relaxed"
+          className="input min-h-[320px] font-mono text-xs leading-relaxed"
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck={false}
         />
-        <div className="flex items-center gap-3 mt-4 flex-wrap">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button className="btn" disabled={saving} type="submit">保存</button>
-          <span className="text-xs text-slate-500">保存即校验并热生效;字段说明见 .docs/configuration.md</span>
+          <span className="text-[12px] text-ghost">保存即校验并热生效;字段说明见 .docs/configuration.md</span>
         </div>
       </form>
     </div>

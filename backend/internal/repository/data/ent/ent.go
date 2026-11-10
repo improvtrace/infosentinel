@@ -14,8 +14,9 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/secret"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/setting"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscription"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscriptionrun"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/target"
-	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/task"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/topic"
 )
 
@@ -77,11 +78,12 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			secret.Table:  secret.ValidColumn,
-			setting.Table: setting.ValidColumn,
-			target.Table:  target.ValidColumn,
-			task.Table:    task.ValidColumn,
-			topic.Table:   topic.ValidColumn,
+			secret.Table:          secret.ValidColumn,
+			setting.Table:         setting.ValidColumn,
+			subscription.Table:    subscription.ValidColumn,
+			subscriptionrun.Table: subscriptionrun.ValidColumn,
+			target.Table:          target.ValidColumn,
+			topic.Table:           topic.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

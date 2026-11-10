@@ -56,14 +56,14 @@ func (d *Data) UpsertTarget(ctx context.Context, t repository.Target) error {
 	return nil
 }
 
-// DeleteTarget 实现 repository.TargetRepository:被任务引用时拒绝。
+// DeleteTarget 实现 repository.TargetRepository:被订阅引用时拒绝。
 func (d *Data) DeleteTarget(ctx context.Context, name string) error {
-	tasks, err := d.tasksUsingTarget(ctx, name)
+	subs, err := d.subscriptionsUsingTarget(ctx, name)
 	if err != nil {
 		return err
 	}
-	if len(tasks) > 0 {
-		return fmt.Errorf("推送目标 %q 仍被任务引用:%s;请先修改或删除这些任务", name, joinNames(tasks))
+	if len(subs) > 0 {
+		return fmt.Errorf("推送目标 %q 仍被订阅引用:%s;请先修改或删除这些订阅", name, joinNames(subs))
 	}
 	n, err := d.client.Target.Delete().Where(target.Name(name)).Exec(ctx)
 	if err != nil {
@@ -75,26 +75,26 @@ func (d *Data) DeleteTarget(ctx context.Context, name string) error {
 	return nil
 }
 
-// UsedByTarget 实现 repository.TargetRepository。
+// UsedByTarget 实现 repository.TargetRepository:引用该目标的订阅数。
 func (d *Data) UsedByTarget(ctx context.Context, name string) (int, error) {
-	tasks, err := d.tasksUsingTarget(ctx, name)
+	subs, err := d.subscriptionsUsingTarget(ctx, name)
 	if err != nil {
 		return 0, err
 	}
-	return len(tasks), nil
+	return len(subs), nil
 }
 
-// tasksUsingTarget 扫描任务并统计 targets JSON 中引用该目标的任务名。
-func (d *Data) tasksUsingTarget(ctx context.Context, name string) ([]string, error) {
-	tasks, err := d.ListTasks(ctx)
+// subscriptionsUsingTarget 扫描订阅并统计 targets JSON 中引用该目标的订阅主题列表。
+func (d *Data) subscriptionsUsingTarget(ctx context.Context, name string) ([]string, error) {
+	subs, err := d.ListSubscriptions(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
-	for _, t := range tasks {
-		for _, ref := range t.Targets {
+	for _, s := range subs {
+		for _, ref := range s.Targets {
 			if ref == name {
-				out = append(out, t.Name)
+				out = append(out, s.Topic)
 				break
 			}
 		}

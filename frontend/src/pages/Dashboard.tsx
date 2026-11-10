@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { errMsg, get, post } from '../api'
-import { dur, ftime } from '../fmt'
+import { dur, ftime, triggerLabel } from '../fmt'
 import { IconPlay, IconRefresh, IconSend } from '../components/icons'
-import { Empty, Section, Stat, StatusBadge, TableWrap } from '../components/ui'
+import { Empty, PageHead, Section, StatBand, StatusBadge, TableWrap } from '../components/ui'
 import { useToast } from '../components/Toast'
 import type { MutationResult, Overview } from '../types'
 
@@ -21,10 +21,10 @@ export default function Dashboard() {
     return () => clearInterval(t)
   }, [load, ov?.running])
 
-  const runTask = async (name: string) => {
+  const runTask = async (topic: string) => {
     try {
-      await post<MutationResult>(`/api/tasks/${encodeURIComponent(name)}/run`)
-      toast.ok(`已触发任务 ${name},后台执行中`)
+      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(topic)}/run`)
+      toast.ok(`已触发订阅 ${topic},后台执行中`)
       setTimeout(load, 1200)
     } catch (e) {
       toast.err(errMsg(e))
@@ -40,28 +40,28 @@ export default function Dashboard() {
     }
   }
 
-  if (!ov) return <div className="empty mt-8">加载中…</div>
+  if (!ov) return <div className="empty mt-8">正在连接服务,加载概览…</div>
 
   return (
     <div>
-      <div className="flex items-end gap-3 mb-5">
-        <div>
-          <h1 className="page-title">概览</h1>
-          <p className="text-[12.5px] text-slate-400 dark:text-slate-500 mt-1">
-            发送器 {ov.mailer_type} · 历史仅存进程内存 · 持久化产物见邮件产物页
-          </p>
-        </div>
-        <button className="btn btn-ghost btn-sm ml-auto" onClick={load}>
-          <IconRefresh width={14} height={14} /> 刷新
-        </button>
-      </div>
+      <PageHead
+        title="概览"
+        desc={`发送通道 ${ov.mailer_type === 'smtp' ? '邮件(SMTP)' : '站内信'};历史保存在进程内存,持久化报告见产物空间`}
+        actions={
+          <button className="btn btn-ghost btn-sm" onClick={load}>
+            <IconRefresh width={14} height={14} /> 刷新
+          </button>
+        }
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat value={ov.tasks} label="任务总数" tone="brand" />
-        <Stat value={ov.running} label="运行中" tone="warn" />
-        <Stat value={ov.ok} label="成功(内存历史)" tone="ok" />
-        <Stat value={ov.fail} label="失败(内存历史)" tone="bad" />
-      </div>
+      <StatBand
+        items={[
+          { key: '订阅总数', value: ov.subscriptions, tone: 'accent' },
+          { key: '运行中', value: ov.running, tone: 'warn' },
+          { key: '成功', value: ov.ok, tone: 'ok' },
+          { key: '失败', value: ov.fail, tone: 'bad' },
+        ]}
+      />
 
       <Section title="调度计划">
         {ov.nexts.length > 0 ? (
@@ -69,7 +69,7 @@ export default function Dashboard() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>任务</th>
+                  <th>订阅</th>
                   <th>cron</th>
                   <th>下次触发</th>
                   <th className="text-right">操作</th>
@@ -79,14 +79,16 @@ export default function Dashboard() {
                 {ov.nexts.map((n, i) => (
                   <tr key={i}>
                     <td>
-                      <Link className="text-[#4d6bfe] font-medium no-underline hover:underline" to={`/tasks/${n.task}`}>
-                        {n.task}
+                      <Link className="font-medium text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(n.topic)}`}>
+                        {n.topic}
                       </Link>
                     </td>
-                    <td><span className="mono">{n.schedule}</span></td>
-                    <td className="text-slate-500">{ftime(n.next)}</td>
+                    <td>
+                      <span className="mono">{n.cron}</span>
+                    </td>
+                    <td className="text-dim">{ftime(n.next)}</td>
                     <td className="text-right">
-                      <button className="btn btn-ghost btn-sm" onClick={() => runTask(n.task)}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => runTask(n.topic)}>
                         <IconPlay width={12} height={12} /> 运行
                       </button>
                     </td>
@@ -96,7 +98,7 @@ export default function Dashboard() {
             </table>
           </TableWrap>
         ) : (
-          <Empty>还没有调度规则;到配置管理创建任务</Empty>
+          <Empty>还没有调度中的订阅;到订阅管理新建订阅</Empty>
         )}
       </Section>
 
@@ -116,8 +118,10 @@ export default function Dashboard() {
                 {ov.targets.map((t) => (
                   <tr key={t.name}>
                     <td className="font-medium">{t.name}</td>
-                    <td><span className="mono">{t.type}</span></td>
-                    <td className="text-slate-500">{t.to}</td>
+                    <td>
+                      <span className="mono">{t.type}</span>
+                    </td>
+                    <td className="text-dim">{t.to}</td>
                     <td className="text-right">
                       <button className="btn btn-ghost btn-sm" onClick={() => testTarget(t.name)}>
                         <IconSend width={12} height={12} /> 发送测试邮件
@@ -140,7 +144,7 @@ export default function Dashboard() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>任务</th>
+                  <th>订阅</th>
                   <th>触发</th>
                   <th>状态</th>
                   <th>耗时</th>
@@ -151,21 +155,28 @@ export default function Dashboard() {
               <tbody>
                 {ov.recent_runs.map((r) => (
                   <tr key={r.id}>
-                    <td className="text-slate-400">{r.id}</td>
+                    <td className="font-mono text-[12px] text-ghost">{r.id}</td>
                     <td>
-                      <Link className="text-[#4d6bfe] no-underline hover:underline" to={`/tasks/${r.task}`}>
-                        {r.task}
+                      <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(r.topic)}`}>
+                        {r.topic}
                       </Link>
                     </td>
-                    <td className="text-slate-400 text-[12px]">{r.trigger}</td>
-                    <td><StatusBadge status={r.status} /></td>
-                    <td className="text-slate-500">{r.finished_at ? dur(r.duration) : '—'}</td>
-                    <td className="text-slate-400 text-[12px]">{ftime(r.started_at)}</td>
+                    <td className="text-[12px] text-ghost">{triggerLabel(r.trigger)}</td>
+                    <td>
+                      <StatusBadge status={r.status} />
+                    </td>
+                    <td className="font-mono text-[12px] text-dim">{r.finished_at ? dur(r.duration) : '—'}</td>
+                    <td className="text-[12px] text-ghost">{ftime(r.started_at)}</td>
                     <td>
                       {r.subject ? (
-                        <Link className="text-[#4d6bfe] no-underline hover:underline" to={`/runs/${r.id}`}>{r.subject}</Link>
+                        <Link className="text-accent no-underline hover:underline" to={`/runs/${r.id}`}>
+                          {r.subject}
+                        </Link>
                       ) : r.error ? (
-                        <Link className="text-slate-400 no-underline hover:underline text-[12px]" to={`/runs/${r.id}`}>
+                        <Link
+                          className="text-[12px] text-ghost no-underline hover:underline"
+                          to={`/runs/${r.id}`}
+                        >
                           {r.error.slice(0, 56)}…
                         </Link>
                       ) : (
@@ -178,7 +189,7 @@ export default function Dashboard() {
             </table>
           </TableWrap>
         ) : (
-          <Empty>暂无运行记录;点击上方任务行的“运行”手动触发一次</Empty>
+          <Empty>暂无运行记录;点击上方订阅行的「运行」手动触发一次</Empty>
         )}
       </Section>
     </div>

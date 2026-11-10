@@ -7,7 +7,7 @@ import (
 
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent"
-	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/task"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscription"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/topic"
 )
 
@@ -51,16 +51,16 @@ func (d *Data) UpsertTopic(ctx context.Context, t repository.Topic) error {
 	return nil
 }
 
-// DeleteTopic 实现 repository.TopicRepository:被任务引用时拒绝。
+// DeleteTopic 实现 repository.TopicRepository:已有订阅时拒绝。
 func (d *Data) DeleteTopic(ctx context.Context, name string) error {
-	tasks, err := d.tasksUsingTopic(ctx, name)
+	n, err := d.client.Subscription.Query().Where(subscription.Topic(name)).Count(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("查询主题引用: %w", err)
 	}
-	if len(tasks) > 0 {
-		return fmt.Errorf("主题 %q 仍被任务引用:%s;请先修改或删除这些任务", name, joinNames(tasks))
+	if n > 0 {
+		return fmt.Errorf("主题 %q 已被订阅引用;请先在订阅管理中删除对应订阅", name)
 	}
-	n, err := d.client.Topic.Delete().Where(topic.Name(name)).Exec(ctx)
+	n, err = d.client.Topic.Delete().Where(topic.Name(name)).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -70,23 +70,9 @@ func (d *Data) DeleteTopic(ctx context.Context, name string) error {
 	return nil
 }
 
-// UsedByTopic 实现 repository.TopicRepository。
+// UsedByTopic 实现 repository.TopicRepository:引用该主题的订阅数。
 func (d *Data) UsedByTopic(ctx context.Context, name string) (int, error) {
-	return d.client.Task.Query().Where(task.Topic(name)).Count(ctx)
-}
-
-// tasksUsingTopic 返回引用某主题的任务名列表。
-func (d *Data) tasksUsingTopic(ctx context.Context, topicName string) ([]string, error) {
-	rows, err := d.client.Task.Query().Where(task.Topic(topicName)).All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("查询主题引用: %w", err)
-	}
-	out := make([]string, 0, len(rows))
-	for _, t := range rows {
-		out = append(out, t.Name)
-	}
-	sort.Strings(out)
-	return out, nil
+	return d.client.Subscription.Query().Where(subscription.Topic(name)).Count(ctx)
 }
 
 var _ repository.TopicRepository = (*Data)(nil)

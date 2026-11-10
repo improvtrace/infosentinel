@@ -34,14 +34,14 @@ export default function Console() {
     }
   }
 
-  if (!cfg) return <div className="empty mt-6">加载中…</div>
+  if (!cfg) return <div className="empty mt-6">正在加载配置…</div>
 
   return (
     <div>
       <div className="grid grid-cols-3 gap-3">
-        <Stat value={cfg.topics.length} label={<Link className="no-underline hover:underline" to="topics">主题</Link>} tone="brand" />
-        <Stat value={cfg.targets.length} label={<Link className="no-underline hover:underline" to="targets">推送目标</Link>} tone="brand" />
-        <Stat value={cfg.tasks.length} label={<Link className="no-underline hover:underline" to="tasks">任务</Link>} tone="brand" />
+        <Stat value={cfg.topics.length} label={<Link className="text-dim no-underline hover:underline" to="topics">主题</Link>} tone="accent" />
+        <Stat value={cfg.targets.length} label={<Link className="text-dim no-underline hover:underline" to="targets">推送目标</Link>} tone="accent" />
+        <Stat value={cfg.subscriptions.length} label={<Link className="text-dim no-underline hover:underline" to="/subscriptions">订阅</Link>} tone="accent" />
       </div>
 
       <Section title="当前生效摘要">
@@ -49,38 +49,36 @@ export default function Console() {
           <table className="tbl">
             <tbody>
               <tr>
-                <td className="w-28 text-slate-400 text-[12px]">模型</td>
+                <td className="w-28 text-[12px] text-ghost">模型</td>
                 <td>
-                  <span className="mono">{cfg.llm.model}</span> @ {cfg.llm.base_url}
-                  <span className="text-slate-400 text-[12px]"> · Key 走环境变量 </span>
-                  <span className="mono">{cfg.llm.api_key_env}</span>
-                  <span className="text-slate-400 text-[12px]"> 或加密存储</span>
+                  <span className="mono">{cfg.llm.model}</span> <span className="text-ghost">@ {cfg.llm.base_url}</span>
+                  <span className="ml-3 text-[12px] text-ghost">API Key 加密存储于全局设置</span>
                 </td>
               </tr>
               <tr>
-                <td className="text-slate-400 text-[12px]">发送器</td>
+                <td className="text-[12px] text-ghost">发送</td>
                 <td>
                   <span className="mono">{cfg.mailer.type}</span>
                   {cfg.mailer.type === 'smtp' && (
-                    <span className="text-slate-500"> → {cfg.mailer.smtp.host}:{cfg.mailer.smtp.port}</span>
+                    <span className="ml-2 text-dim">→ {cfg.mailer.smtp.host}:{cfg.mailer.smtp.port}</span>
                   )}
-                  {cfg.mailer.type === 'dryrun' && (
-                    <span className="text-slate-400 text-[12px]"> → {cfg.mailer.output_dir}</span>
+                  {cfg.mailer.type === '站内信' && (
+                    <span className="ml-2 text-[12px] text-ghost">报告存入产物空间({cfg.storage.type}),在界面在线查看</span>
                   )}
                 </td>
               </tr>
               <tr>
-                <td className="text-slate-400 text-[12px]">管理界面</td>
-                <td>{cfg.server.enabled === false ? '已关闭' : '已启用'} · <span className="mono">{cfg.server.addr}</span></td>
+                <td className="text-[12px] text-ghost">管理界面</td>
+                <td>
+                  {cfg.server.enabled === false ? '已关闭' : '已启用'} <span className="ml-2 mono">{cfg.server.addr}</span>
+                </td>
               </tr>
               {nexts.map((n, i) => (
                 <tr key={i}>
-                  <td className="text-slate-400 text-[12px]">调度</td>
+                  <td className="text-[12px] text-ghost">调度</td>
                   <td>
-                    <span className="mono">{n.task}</span>
-                    <span className="text-slate-400"> · </span>
-                    <span className="mono">{n.schedule}</span>
-                    <span className="text-slate-500"> → 下次 {ftime(n.next)}</span>
+                    <span className="mono">{n.topic}</span> <span className="mono">{n.cron}</span>
+                    <span className="ml-3 text-[12px] text-dim">下次 {ftime(n.next)}</span>
                   </td>
                 </tr>
               ))}
@@ -89,29 +87,29 @@ export default function Console() {
         </div>
       </Section>
 
-      <div className="flex items-center gap-3 mt-5 flex-wrap">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <button className="btn btn-ghost" disabled={busy} onClick={apply}>
           <IconRefresh width={14} height={14} /> 从数据库重载配置
         </button>
-        <span className="text-[12px] text-slate-400">
-          保存操作已自动生效;此按钮用于手动重载(等待运行中的任务结束)
+        <span className="text-[12px] text-ghost">
+          保存操作已自动生效;此按钮用于手动重载(等待运行中的订阅结束)
         </span>
       </div>
 
       <Section title="配置解读">
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <div className="card p-4">
-            <div className="text-[13px] font-medium mb-1">数据从哪里来</div>
-            <p className="text-[12.5px] text-slate-500 dark:text-slate-400 m-0">
+            <div className="mb-1 text-[13px] font-medium">数据从哪里来</div>
+            <p className="m-0 text-[12.5px] leading-relaxed text-ghost">
               全部业务配置存于 SQLite 数据库(唯一事实源);config.yaml 只保留数据库与日志路径。
               首次启动自动写入默认种子,之后全部在此页面维护。
             </p>
           </div>
           <div className="card p-4">
-            <div className="text-[13px] font-medium mb-1">敏感数据</div>
-            <p className="text-[12.5px] text-slate-500 dark:text-slate-400 m-0">
-              模型 API Key 与 SMTP 授权码支持加密入库(AES-256-GCM),也可继续用环境变量;
-              <Link to="settings" className="text-[#4d6bfe] no-underline hover:underline"> 前往全局设置 </Link>
+            <div className="mb-1 text-[13px] font-medium">敏感数据</div>
+            <p className="m-0 text-[12.5px] leading-relaxed text-ghost">
+              模型 API Key 与 SMTP 授权码在界面填写后加密入库(AES-256-GCM),数据库密文是唯一来源;
+              <Link to="settings" className="text-accent no-underline hover:underline"> 前往全局设置 </Link>
               填写。
             </p>
           </div>

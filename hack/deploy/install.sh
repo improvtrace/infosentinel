@@ -8,8 +8,8 @@
 #
 # 统一目录布局:
 #   $PREFIX/bin/infosentinel          二进制
-#   $PREFIX/config/config.yaml        引导配置(database/log;业务配置在 Web 界面管理)
-#   $PREFIX/.tests/                   运行时依赖与输出(数据库、日志、dry-run 邮件)
+#   $PREFIX/config/config.yaml        引导配置(database/log/storage/state_dir;业务配置在 Web 界面管理)
+#   $PREFIX/.tests/                   运行时依赖与输出(数据库、日志、产物空间、去重状态)
 #
 # 运行时路径由 config.yaml 决定(默认 .tests/...,相对工作目录;
 # systemd 以 $PREFIX 为工作目录,如需自定义请安装后编辑 config/config.yaml)。
@@ -38,7 +38,7 @@ if ! id -u "$SVC_USER" >/dev/null 2>&1; then
   fi
 fi
 
-mkdir -p "$PREFIX/bin" "$PREFIX/config" "$PREFIX/.tests/data" "$PREFIX/.tests/logs" "$PREFIX/.tests/output"
+mkdir -p "$PREFIX/bin" "$PREFIX/config" "$PREFIX/.tests/data" "$PREFIX/.tests/data/state" "$PREFIX/.tests/logs" "$PREFIX/.tests/artifacts"
 
 echo "==> 安装二进制"
 install -m 0755 "$PKG_ROOT/bin/infosentinel" "$PREFIX/bin/infosentinel"
@@ -83,7 +83,7 @@ cat <<EOF
   日志:    journalctl -u infosentinel -f  或  ${PREFIX}/.tests/logs/infosentinel.log
 
 下一步:
-  1. 按需编辑 ${PREFIX}/config/config.yaml(数据库/日志路径,默认 .tests/ 即可)
-  2. export DEEPSEEK_API_KEY=... 并写入 systemd 环境文件(见 ${PREFIX}/config)
-  3. 打开管理界面 → 配置页,完成主题 / 推送目标 / 任务设置
+  1. 按需编辑 ${PREFIX}/config/config.yaml(部署路径,默认 .tests/ 即可)
+  2. export INFOSENTINEL_ENCRYPT_KEY=... 并写入 systemd 环境文件(见 ${PREFIX}/config)
+  3. 打开管理界面 → 配置 → 全局设置,填写模型 API Key(加密存储),完成主题 / 推送目标 / 任务设置
 EOF

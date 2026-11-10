@@ -31,10 +31,18 @@ export const IconRuns = (p: P) => (
   </svg>
 )
 
-export const IconMail = (p: P) => (
+export const IconSubs = (p: P) => (
   <svg {...base(p)}>
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <path d="m3.5 7 8.5 6 8.5-6" />
+    <path d="M6 9a6 6 0 0 1 12 0c0 5.5 2 6.7 2 6.7H4S6 14.5 6 9Z" />
+    <path d="M10.3 20.1a1.95 1.95 0 0 0 3.4 0" />
+  </svg>
+)
+
+export const IconArchive = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4" width="18" height="4.5" rx="1.2" />
+    <path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5" />
+    <path d="M10 12.5h4" />
   </svg>
 )
 

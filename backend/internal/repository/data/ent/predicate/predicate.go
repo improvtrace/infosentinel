@@ -12,11 +12,14 @@ type Secret func(*sql.Selector)
 // Setting is the predicate function for setting builders.
 type Setting func(*sql.Selector)
 
+// Subscription is the predicate function for subscription builders.
+type Subscription func(*sql.Selector)
+
+// SubscriptionRun is the predicate function for subscriptionrun builders.
+type SubscriptionRun func(*sql.Selector)
+
 // Target is the predicate function for target builders.
 type Target func(*sql.Selector)
-
-// Task is the predicate function for task builders.
-type Task func(*sql.Selector)
 
 // Topic is the predicate function for topic builders.
 type Topic func(*sql.Selector)

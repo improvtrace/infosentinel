@@ -14,16 +14,15 @@ export interface Target {
   used_by?: number
 }
 
-export interface Task {
-  name: string
+export interface Subscription {
   topic: string
+  cron: string
   targets: string[]
-  schedules: string[]
 }
 
 export interface NextRun {
-  task: string
-  schedule: string
+  topic: string
+  cron: string
   next: string
 }
 
@@ -31,7 +30,7 @@ export type RunStatus = 'running' | 'success' | 'failed'
 
 export interface RunRecord {
   id: number
-  task: string
+  topic: string
   trigger: string
   status: RunStatus
   started_at: string
@@ -45,7 +44,6 @@ export interface RunRecord {
 export interface LLMConfig {
   base_url: string
   model: string
-  api_key_env: string
   temperature: number
   timeout_sec: number
   max_step: number
@@ -55,15 +53,39 @@ export interface SmtpConfig {
   host: string
   port: number
   username: string
-  password_env: string
   from: string
   ssl: boolean | null
 }
 
 export interface MailerConfig {
   type: string
-  output_dir: string
   smtp: SmtpConfig
+}
+
+export interface StorageSFTP {
+  host: string
+  port: number
+  username: string
+  key_path: string
+  host_key: string
+  base_dir: string
+}
+
+export interface StorageFTP {
+  host: string
+  port: number
+  username: string
+  base_dir: string
+  tls: boolean
+}
+
+export interface StorageConfig {
+  type: string // local | sftp | ftp
+  path: string
+  period_days: number
+  max_dirs: number
+  sftp: StorageSFTP
+  ftp: StorageFTP
 }
 
 export interface ServerConfig {
@@ -75,23 +97,30 @@ export interface Settings {
   llm: LLMConfig
   mailer: MailerConfig
   server: ServerConfig
+  storage: StorageConfig
 }
 
-export interface EmailFile {
+export interface ArtifactFile {
+  bucket: string
   name: string
-  task: string
   size: number
   mod_time: string
+  topic?: string
 }
 
-export interface EmailContent extends EmailFile {
+export interface ArtifactContent extends ArtifactFile {
   content: string
+}
+
+export interface TestResult {
+  ok: boolean
+  message: string
 }
 
 export interface Overview {
   version: string
   uptime_sec: number
-  tasks: number
+  subscriptions: number
   running: number
   ok: number
   fail: number
@@ -116,10 +145,11 @@ export interface Config {
   sources: Sources
   topics: Topic[]
   targets: Target[]
-  tasks: Task[]
+  subscriptions: Subscription[]
   llm: LLMConfig
   mailer: MailerConfig
   server: ServerConfig
+  storage: StorageConfig
 }
 
 export interface Sources {
@@ -129,7 +159,6 @@ export interface Sources {
     http_timeout_sec: number
     max_body_chars: number
     dedup_days: number
-    state_dir: string
   }
   rss: { enabled: boolean; feeds: { name: string; url: string }[] }
   search: { enabled: boolean; region: string; max_results: number }

@@ -33,6 +33,30 @@ func (f SettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SettingMutation", m)
 }
 
+// The SubscriptionFunc type is an adapter to allow the use of ordinary
+// function as Subscription mutator.
+type SubscriptionFunc func(context.Context, *ent.SubscriptionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SubscriptionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SubscriptionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionMutation", m)
+}
+
+// The SubscriptionRunFunc type is an adapter to allow the use of ordinary
+// function as SubscriptionRun mutator.
+type SubscriptionRunFunc func(context.Context, *ent.SubscriptionRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SubscriptionRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SubscriptionRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionRunMutation", m)
+}
+
 // The TargetFunc type is an adapter to allow the use of ordinary
 // function as Target mutator.
 type TargetFunc func(context.Context, *ent.TargetMutation) (ent.Value, error)
@@ -43,18 +67,6 @@ func (f TargetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TargetMutation", m)
-}
-
-// The TaskFunc type is an adapter to allow the use of ordinary
-// function as Task mutator.
-type TaskFunc func(context.Context, *ent.TaskMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f TaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.TaskMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskMutation", m)
 }
 
 // The TopicFunc type is an adapter to allow the use of ordinary

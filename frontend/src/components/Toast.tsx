@@ -37,22 +37,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm">
+      <div className="fixed bottom-6 right-6 z-50 flex max-w-sm flex-col gap-2">
         {items.map((t) => (
           <div
             key={t.id}
-            className={`flex items-start gap-2.5 px-4 py-3 rounded-[12px] shadow-lg border text-[13px] animate-[slideIn_.18s_ease-out] ${
-              t.kind === 'ok'
-                ? 'bg-white dark:bg-[#111827] border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300'
-                : 'bg-white dark:bg-[#111827] border-red-200 dark:border-red-900 text-red-600 dark:text-red-300'
+            className={`toast-pop flex items-start gap-2.5 ${
+              t.kind === 'ok' ? 'text-ok' : 'text-bad'
             }`}
+            style={{ animation: 'toastIn .18s ease-out' }}
           >
-            {t.kind === 'ok' ? <IconCheck className="shrink-0 mt-0.5" /> : <IconAlert className="shrink-0 mt-0.5" />}
+            {t.kind === 'ok' ? <IconCheck className="mt-0.5 shrink-0" /> : <IconAlert className="mt-0.5 shrink-0" />}
             <span>{t.text}</span>
           </div>
         ))}
       </div>
-      <style>{`@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
+      <style>{`@keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
     </Ctx.Provider>
   )
 }

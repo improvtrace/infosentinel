@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/tomasgdl/infosentinel/backend/internal/crypto"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/secret"
+	"github.com/tomasgdl/infosentinel/backend/pkg/crypto"
 )
 
 // SetSecret 实现 repository.SecretRepository:明文经 AES-256-GCM 加密后落库。

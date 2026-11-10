@@ -9,14 +9,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,27 +22,34 @@ import (
 	klog "github.com/go-kratos/kratos/v2/log"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
-	"github.com/tomasgdl/infosentinel/backend/internal/history"
-	"github.com/tomasgdl/infosentinel/backend/internal/logger"
+	"github.com/tomasgdl/infosentinel/backend/internal/artifact"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/scheduler"
+	"github.com/tomasgdl/infosentinel/backend/pkg/logger"
+	"github.com/tomasgdl/infosentinel/backend/pkg/storage"
 	"github.com/tomasgdl/infosentinel/frontend"
 )
 
 // Deps 是界面后端依赖(全部以函数/接口注入,配置热重载后自动读取最新状态)。
 type Deps struct {
-	Version    string
-	StartedAt  time.Time
-	Config     func() *repository.Config  // 当前生效配置
-	NextRuns   func() []scheduler.NextRun // 各 (任务, 表达式) 的下次触发
-	History    *history.Store             // 运行历史
-	IsRunning  func(name string) bool     // 任务是否在执行中
-	Trigger    func(name string) error    // 手动触发任务(后台执行)
-	TestTarget func(name string) error    // 向推送目标发送测试邮件
-	Apply      func() error               // 从数据库重载配置并重建调度
-	Repo       repository.Repository      // 配置存储
-	EmailsDir  func() string              // dry-run 邮件产物目录
-	Log        *klog.Helper               // 日志(访问埋点)
+	Version   string
+	StartedAt time.Time
+	Config    func() *repository.Config  // 当前生效配置
+	NextRuns  func() []scheduler.NextRun // 各订阅的下次触发
+	Artifacts func() *artifact.Manager   // 产物空间(随配置热重载)
+	IsRunning func(topic string) bool    // 订阅是否在执行中
+	Trigger   func(topic string) error   // 手动触发订阅(后台执行)
+	// TestTarget 向推送目标发送测试邮件。
+	TestTarget func(name string) error
+	// TestLLM 用表单值(不落库)测试模型配置:发一次最小对话请求。
+	TestLLM func(ctx context.Context, cfg repository.LLMConfig, apiKey string) (string, error)
+	// TestMailer 用表单值(不落库)测试发送器配置:发测试邮件/写测试产物。
+	TestMailer func(ctx context.Context, cfg repository.MailerConfig, password, to string) (string, error)
+	// Apply 从数据库重载配置并重建调度。
+	Apply func() error
+	// Repo 是配置存储(含运行记录)。
+	Repo repository.Repository
+	Log  *klog.Helper // 日志(访问埋点)
 }
 
 // Server 是管理界面后端。
@@ -75,25 +80,26 @@ func New(d Deps, addr string) *khttp.Server {
 	api.DELETE("/targets/{name}", s.deleteTarget)
 	api.POST("/targets/{name}/test", s.targetTestPost)
 
-	api.GET("/tasks", s.listTasks)
-	api.POST("/tasks", s.createTask)
-	api.PUT("/tasks/{name}", s.updateTask)
-	api.DELETE("/tasks/{name}", s.deleteTask)
-	api.POST("/tasks/{name}/run", s.runTaskPost)
+	api.GET("/subscriptions", s.listSubscriptions)
+	api.POST("/subscriptions", s.createSubscription)
+	api.PUT("/subscriptions/{topic}", s.updateSubscription)
+	api.DELETE("/subscriptions/{topic}", s.deleteSubscription)
+	api.POST("/subscriptions/{topic}/run", s.runSubscriptionPost)
 
 	api.GET("/sources", s.getSources)
 	api.PUT("/sources", s.putSources)
 	api.GET("/settings", s.getSettings)
 	api.PUT("/settings/{section}", s.putSettings)
+	api.POST("/settings/llm/test", s.llmTestPost)
+	api.POST("/settings/mailer/test", s.mailerTestPost)
 	api.GET("/secrets", s.listSecrets)
-	api.PUT("/secrets/{name}", s.putSecret)
 	api.DELETE("/secrets/{name}", s.deleteSecret)
 	api.POST("/apply", s.applyPost)
 
 	api.GET("/runs", s.listRuns)
 	api.GET("/runs/{id}", s.runDetail)
-	api.GET("/emails", s.listEmailsAPI)
-	api.GET("/emails/{name}", s.emailContent)
+	api.GET("/artifacts", s.listArtifacts)
+	api.GET("/artifacts/{bucket}/{name}", s.artifactContent)
 	api.GET("/healthz", s.health)
 
 	srv.HandlePrefix("/", s.spaHandler())
@@ -187,20 +193,23 @@ func ctxParam(ctx khttp.Context, key string) string {
 
 func (s *Server) overview(ctx khttp.Context) error {
 	cfg := s.d.Config()
-	runs := s.d.History.Snapshot()
+	runs, err := s.d.Repo.ListRuns(ctx, "", 200)
+	if err != nil {
+		return apiError(ctx, http.StatusInternalServerError, err)
+	}
 
 	running := 0
-	for _, t := range cfg.Tasks {
-		if s.d.IsRunning(t.Name) {
+	for _, sub := range cfg.Subscriptions {
+		if s.d.IsRunning(sub.Topic) {
 			running++
 		}
 	}
 	ok, fail := 0, 0
 	for _, rr := range runs {
 		switch rr.Status {
-		case history.Success:
+		case repository.RunStatusSuccess:
 			ok++
-		case history.Failed:
+		case repository.RunStatusFailed:
 			fail++
 		}
 	}
@@ -210,16 +219,16 @@ func (s *Server) overview(ctx khttp.Context) error {
 	}
 
 	return writeJSON(ctx, http.StatusOK, map[string]any{
-		"version":     s.d.Version,
-		"uptime_sec":  time.Since(s.d.StartedAt).Seconds(),
-		"tasks":       len(cfg.Tasks),
-		"running":     running,
-		"ok":          ok,
-		"fail":        fail,
-		"nexts":       s.d.NextRuns(),
-		"recent_runs": recent,
-		"targets":     cfg.Targets,
-		"mailer_type": cfg.Mailer.Type,
+		"version":       s.d.Version,
+		"uptime_sec":    time.Since(s.d.StartedAt).Seconds(),
+		"subscriptions": len(cfg.Subscriptions),
+		"running":       running,
+		"ok":            ok,
+		"fail":          fail,
+		"nexts":         s.d.NextRuns(),
+		"recent_runs":   recent,
+		"targets":       cfg.Targets,
+		"mailer_type":   cfg.Mailer.Type,
 	})
 }
 
@@ -230,17 +239,18 @@ func (s *Server) getConfig(ctx khttp.Context) error {
 func (s *Server) health(ctx khttp.Context) error {
 	cfg := s.d.Config()
 	running := 0
-	for _, t := range cfg.Tasks {
-		if s.d.IsRunning(t.Name) {
+	for _, sub := range cfg.Subscriptions {
+		if s.d.IsRunning(sub.Topic) {
 			running++
 		}
 	}
+	runs, _ := s.d.Repo.CountRuns(ctx)
 	return writeJSON(ctx, http.StatusOK, map[string]any{
-		"version": s.d.Version,
-		"uptime":  time.Since(s.d.StartedAt).Round(time.Second).String(),
-		"tasks":   len(cfg.Tasks),
-		"running": running,
-		"history": s.d.History.Len(),
+		"version":       s.d.Version,
+		"uptime":        time.Since(s.d.StartedAt).Round(time.Second).String(),
+		"subscriptions": len(cfg.Subscriptions),
+		"running":       running,
+		"history":       runs,
 	})
 }
 
@@ -385,77 +395,77 @@ func (s *Server) targetTestPost(ctx khttp.Context) error {
 	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "sent": true})
 }
 
-// ---- 任务 ----
+// ---- 订阅 ----
 
-func (s *Server) listTasks(ctx khttp.Context) error {
-	items, err := s.d.Repo.ListTasks(ctx)
+func (s *Server) listSubscriptions(ctx khttp.Context) error {
+	items, err := s.d.Repo.ListSubscriptions(ctx)
 	if err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return writeJSON(ctx, http.StatusOK, map[string]any{"items": items})
 }
 
-// saveTask 是创建/更新任务的公共路径:整份配置校验(Finalize)→ 落库 → 应用。
-func (s *Server) saveTask(ctx khttp.Context, t repository.Task, isNew bool) error {
+// saveSubscription 是创建/更新订阅的公共路径:整份配置校验(Finalize)→ 落库 → 应用。
+func (s *Server) saveSubscription(ctx khttp.Context, sub repository.Subscription, isNew bool) error {
 	if isNew {
-		if err := validName(t.Name); err != nil {
+		if err := validName(sub.Topic); err != nil {
 			return apiError(ctx, http.StatusBadRequest, err)
 		}
 	}
 	cur := *s.d.Config()
 	replaced := false
-	tasks := make([]repository.Task, 0, len(cur.Tasks)+1)
-	for _, e := range cur.Tasks {
-		if e.Name == t.Name {
-			tasks = append(tasks, t)
+	subs := make([]repository.Subscription, 0, len(cur.Subscriptions)+1)
+	for _, e := range cur.Subscriptions {
+		if e.Topic == sub.Topic {
+			subs = append(subs, sub)
 			replaced = true
 		} else {
-			tasks = append(tasks, e)
+			subs = append(subs, e)
 		}
 	}
 	if !replaced {
-		tasks = append(tasks, t)
+		subs = append(subs, sub)
 	}
-	cur.Tasks = tasks
+	cur.Subscriptions = subs
 	if err := cur.Finalize(); err != nil {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
-	if err := s.d.Repo.UpsertTask(ctx, t); err != nil {
+	if err := s.d.Repo.UpsertSubscription(ctx, sub); err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return s.respondOK(ctx)
 }
 
-func (s *Server) createTask(ctx khttp.Context) error {
-	var t repository.Task
-	if err := decode(ctx.Request(), &t); err != nil {
+func (s *Server) createSubscription(ctx khttp.Context) error {
+	var sub repository.Subscription
+	if err := decode(ctx.Request(), &sub); err != nil {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
-	return s.saveTask(ctx, t, true)
+	return s.saveSubscription(ctx, sub, true)
 }
 
-func (s *Server) updateTask(ctx khttp.Context) error {
-	name := ctxParam(ctx, "name")
-	if _, err := s.d.Repo.GetTask(ctx, name); err != nil {
-		return apiError(ctx, http.StatusNotFound, fmt.Errorf("任务 %q 不存在", name))
+func (s *Server) updateSubscription(ctx khttp.Context) error {
+	topic := ctxParam(ctx, "topic")
+	if _, err := s.d.Repo.GetSubscription(ctx, topic); err != nil {
+		return apiError(ctx, http.StatusNotFound, fmt.Errorf("订阅 %q 不存在", topic))
 	}
-	var in repository.Task
+	var in repository.Subscription
 	if err := decode(ctx.Request(), &in); err != nil {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
-	in.Name = name
-	return s.saveTask(ctx, in, false)
+	in.Topic = topic // 主题即订阅身份,不可改
+	return s.saveSubscription(ctx, in, false)
 }
 
-func (s *Server) deleteTask(ctx khttp.Context) error {
-	if err := s.d.Repo.DeleteTask(ctx, ctxParam(ctx, "name")); err != nil {
+func (s *Server) deleteSubscription(ctx khttp.Context) error {
+	if err := s.d.Repo.DeleteSubscription(ctx, ctxParam(ctx, "topic")); err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return s.respondOK(ctx)
 }
 
-func (s *Server) runTaskPost(ctx khttp.Context) error {
-	if err := s.d.Trigger(ctxParam(ctx, "name")); err != nil {
+func (s *Server) runSubscriptionPost(ctx khttp.Context) error {
+	if err := s.d.Trigger(ctxParam(ctx, "topic")); err != nil {
 		return apiError(ctx, http.StatusConflict, err)
 	}
 	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "started": true})
@@ -497,31 +507,42 @@ func (s *Server) getSettings(ctx khttp.Context) error {
 	cfg := s.d.Config()
 	secrets, _ := s.d.Repo.ListSecrets(ctx)
 	return writeJSON(ctx, http.StatusOK, map[string]any{
-		"llm": cfg.LLM, "mailer": cfg.Mailer, "server": cfg.Server,
+		"llm": cfg.LLM, "mailer": cfg.Mailer, "server": cfg.Server, "storage": cfg.Storage,
 		"secrets": secrets,
 	})
 }
 
+// putSettings 保存设置分区。请求体为分区配置,附带可选 secret(该分区密钥的明文,
+// 非空则随本次保存一并加密落库,留空不动已存密钥)。
 func (s *Server) putSettings(ctx khttp.Context) error {
 	section := ctxParam(ctx, "section")
 	cur := *s.d.Config()
 
+	var secretName, secret string
 	var persist func() error
 	switch section {
 	case "llm":
-		var in repository.LLMConfig
+		var in struct {
+			repository.LLMConfig
+			Secret string `json:"secret"`
+		}
 		if err := decode(ctx.Request(), &in); err != nil {
 			return apiError(ctx, http.StatusBadRequest, err)
 		}
-		cur.LLM = in
-		persist = func() error { return s.d.Repo.PutSetting(ctx, "llm", in) }
+		cur.LLM = in.LLMConfig
+		secretName, secret = "llm.api_key", in.Secret
+		persist = func() error { return s.d.Repo.PutSetting(ctx, "llm", in.LLMConfig) }
 	case "mailer":
-		var in repository.MailerConfig
+		var in struct {
+			repository.MailerConfig
+			Secret string `json:"secret"`
+		}
 		if err := decode(ctx.Request(), &in); err != nil {
 			return apiError(ctx, http.StatusBadRequest, err)
 		}
-		cur.Mailer = in
-		persist = func() error { return s.d.Repo.PutSetting(ctx, "mailer", in) }
+		cur.Mailer = in.MailerConfig
+		secretName, secret = "smtp.password", in.Secret
+		persist = func() error { return s.d.Repo.PutSetting(ctx, "mailer", in.MailerConfig) }
 	case "server":
 		var in repository.ServerConfig
 		if err := decode(ctx.Request(), &in); err != nil {
@@ -529,6 +550,17 @@ func (s *Server) putSettings(ctx khttp.Context) error {
 		}
 		cur.Server = in
 		persist = func() error { return s.d.Repo.PutSetting(ctx, "server", in) }
+	case "storage":
+		var in struct {
+			repository.StorageConfig
+			Secret string `json:"secret"`
+		}
+		if err := decode(ctx.Request(), &in); err != nil {
+			return apiError(ctx, http.StatusBadRequest, err)
+		}
+		cur.Storage = in.StorageConfig
+		secretName, secret = "storage.password", in.Secret
+		persist = func() error { return s.d.Repo.PutSetting(ctx, "storage", in.StorageConfig) }
 	default:
 		return apiError(ctx, http.StatusNotFound, fmt.Errorf("未知设置分区 %q", section))
 	}
@@ -536,10 +568,61 @@ func (s *Server) putSettings(ctx khttp.Context) error {
 	if err := cur.Finalize(); err != nil {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
+	// 密钥先于配置落库:加密失败(如未配置主密钥)时本次保存整体不生效
+	if secretName != "" && strings.TrimSpace(secret) != "" {
+		if err := s.d.Repo.SetSecret(ctx, secretName, secret); err != nil {
+			return apiError(ctx, http.StatusBadRequest, err)
+		}
+		s.d.Log.Infow("secret_saved", "name", secretName)
+	}
 	if err := persist(); err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return s.respondOK(ctx)
+}
+
+// ---- 设置连通性测试(表单值,不落库) ----
+
+// llmTestPost 用表单中的模型配置发起一次最小对话请求,验证配置与密钥可用。
+// secret 为表单中输入的 API Key(空则回退环境变量/已保存密文)。
+func (s *Server) llmTestPost(ctx khttp.Context) error {
+	var in struct {
+		Config repository.LLMConfig `json:"config"`
+		Secret string               `json:"secret"`
+	}
+	if err := decode(ctx.Request(), &in); err != nil {
+		return apiError(ctx, http.StatusBadRequest, err)
+	}
+	if s.d.TestLLM == nil {
+		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("模型测试不可用"))
+	}
+	msg, err := s.d.TestLLM(ctx, in.Config, in.Secret)
+	if err != nil {
+		return writeJSON(ctx, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+	}
+	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "message": msg})
+}
+
+// mailerTestPost 用表单中的发送器配置发送测试邮件(站内信模式写入测试产物)。
+// secret 为表单中输入的授权码(空则使用已保存密文);to 为可选测试收件人,
+// 缺省取第一个 email 推送目标的收件地址。
+func (s *Server) mailerTestPost(ctx khttp.Context) error {
+	var in struct {
+		Config repository.MailerConfig `json:"config"`
+		Secret string                  `json:"secret"`
+		To     string                  `json:"to"`
+	}
+	if err := decode(ctx.Request(), &in); err != nil {
+		return apiError(ctx, http.StatusBadRequest, err)
+	}
+	if s.d.TestMailer == nil {
+		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("发送器测试不可用"))
+	}
+	msg, err := s.d.TestMailer(ctx, in.Config, in.Secret, in.To)
+	if err != nil {
+		return writeJSON(ctx, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+	}
+	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "message": msg})
 }
 
 // listSecrets 只返回已配置的敏感数据名称(不回传明文)。
@@ -551,28 +634,7 @@ func (s *Server) listSecrets(ctx khttp.Context) error {
 	return writeJSON(ctx, http.StatusOK, map[string]any{"items": names})
 }
 
-// putSecret 加密保存敏感数据(明文仅存在于请求体)。
-func (s *Server) putSecret(ctx khttp.Context) error {
-	name := ctxParam(ctx, "name")
-	if name != "llm.api_key" && name != "smtp.password" {
-		return apiError(ctx, http.StatusBadRequest, fmt.Errorf("不支持的敏感数据名称 %q", name))
-	}
-	var in struct {
-		Value string `json:"value"`
-	}
-	if err := decode(ctx.Request(), &in); err != nil {
-		return apiError(ctx, http.StatusBadRequest, err)
-	}
-	if strings.TrimSpace(in.Value) == "" {
-		return apiError(ctx, http.StatusBadRequest, fmt.Errorf("值不能为空"))
-	}
-	if err := s.d.Repo.SetSecret(ctx, name, in.Value); err != nil {
-		return apiError(ctx, http.StatusBadRequest, err)
-	}
-	s.d.Log.Infow("secret_saved", "name", name)
-	return s.respondOK(ctx)
-}
-
+// deleteSecret 删除已保存的敏感数据。
 func (s *Server) deleteSecret(ctx khttp.Context) error {
 	name := ctxParam(ctx, "name")
 	if err := s.d.Repo.DeleteSecret(ctx, name); err != nil {
@@ -588,21 +650,17 @@ func (s *Server) applyPost(ctx khttp.Context) error {
 	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "applied": true})
 }
 
-// ---- 运行 / 邮件 ----
+// ---- 运行 / 产物 ----
 
 func (s *Server) listRuns(ctx khttp.Context) error {
-	runs := s.d.History.Snapshot()
-	if tf := ctx.Query().Get("task"); tf != "" {
-		filtered := make([]history.Record, 0, len(runs))
-		for _, rr := range runs {
-			if rr.Task == tf {
-				filtered = append(filtered, rr)
-			}
-		}
-		runs = filtered
+	topic := ctx.Query().Get("topic")
+	limit := 200 // 缺省上限(与前端列表一致)
+	if v, err := strconv.Atoi(ctx.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
 	}
-	if limit, err := strconv.Atoi(ctx.Query().Get("limit")); err == nil && limit > 0 && limit < len(runs) {
-		runs = runs[:limit]
+	runs, err := s.d.Repo.ListRuns(ctx, topic, limit)
+	if err != nil {
+		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return writeJSON(ctx, http.StatusOK, map[string]any{"items": runs})
 }
@@ -612,46 +670,82 @@ func (s *Server) runDetail(ctx khttp.Context) error {
 	if err != nil {
 		return apiError(ctx, http.StatusBadRequest, fmt.Errorf("非法运行 ID"))
 	}
-	rec, ok := s.d.History.Get(id)
-	if !ok {
+	rec, err := s.d.Repo.GetRun(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) {
 		return apiError(ctx, http.StatusNotFound, fmt.Errorf("运行记录不存在"))
+	}
+	if err != nil {
+		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return writeJSON(ctx, http.StatusOK, rec)
 }
 
-func (s *Server) listEmailsAPI(ctx khttp.Context) error {
-	files := listEmailFiles(s.d.EmailsDir())
-	if tf := ctx.Query().Get("task"); tf != "" {
-		filtered := make([]emailFile, 0, len(files))
-		for _, f := range files {
-			if f.Task == tf {
-				filtered = append(filtered, f)
-			}
-		}
-		files = filtered
-	}
-	return writeJSON(ctx, http.StatusOK, map[string]any{"items": files})
+// artifactNameRe 匹配产物文件名 <topic>-<日期>-<时间>.html,同时用于提取订阅主题。
+var artifactNameRe = regexp.MustCompile(`^(.+)-(\d{8}-\d{6})\.html$`)
+
+// artifactOut 是列表中的产物条目(附带解析出的订阅主题)。
+type artifactOut struct {
+	artifact.File
+	Topic string `json:"topic"`
 }
 
-func (s *Server) emailContent(ctx khttp.Context) error {
-	name := ctxParam(ctx, "name")
-	if !emailNameRe.MatchString(name) {
-		return apiError(ctx, http.StatusBadRequest, fmt.Errorf("非法文件名"))
+// listArtifacts 列出产物空间全部文件(跨分桶,最新在前);?topic= 按订阅过滤。
+func (s *Server) listArtifacts(ctx khttp.Context) error {
+	m := s.d.Artifacts()
+	if m == nil {
+		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("产物空间未就绪"))
 	}
-	path := filepath.Join(s.d.EmailsDir(), name)
-	raw, err := os.ReadFile(path)
+	files, err := m.List(ctx)
 	if err != nil {
-		return apiError(ctx, http.StatusNotFound, fmt.Errorf("邮件文件不存在"))
+		return apiError(ctx, http.StatusInternalServerError, err)
 	}
-	info, _ := os.Stat(path)
-	ef := emailFile{Name: name, ModTime: info.ModTime(), Size: info.Size()}
-	if m := emailNameRe.FindStringSubmatch(name); m != nil {
-		ef.Task = m[1]
+	items := make([]artifactOut, 0, len(files))
+	for _, f := range files {
+		item := artifactOut{File: f}
+		if match := artifactNameRe.FindStringSubmatch(f.Name); match != nil {
+			item.Topic = match[1]
+		}
+		if tf := ctx.Query().Get("topic"); tf != "" && item.Topic != tf {
+			continue
+		}
+		items = append(items, item)
 	}
-	return writeJSON(ctx, http.StatusOK, map[string]any{
-		"name": ef.Name, "task": ef.Task, "size": ef.Size,
-		"mod_time": ef.ModTime, "content": string(raw),
-	})
+	return writeJSON(ctx, http.StatusOK, map[string]any{"items": items})
+}
+
+// artifactContent 读取一个产物文件(HTML 文档)。
+func (s *Server) artifactContent(ctx khttp.Context) error {
+	m := s.d.Artifacts()
+	if m == nil {
+		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("产物空间未就绪"))
+	}
+	bucket, name := ctxParam(ctx, "bucket"), ctxParam(ctx, "name")
+	raw, err := m.Read(ctx, bucket, name)
+	if errors.Is(err, storage.ErrNotFound) {
+		return apiError(ctx, http.StatusNotFound, fmt.Errorf("产物不存在"))
+	}
+	if err != nil {
+		return apiError(ctx, http.StatusBadRequest, err)
+	}
+	out := map[string]any{
+		"bucket":  bucket,
+		"name":    name,
+		"content": string(raw),
+		"size":    len(raw),
+	}
+	if files, err := m.List(ctx); err == nil {
+		for _, f := range files {
+			if f.Bucket == bucket && f.Name == name {
+				out["size"] = f.Size
+				out["mod_time"] = f.ModTime
+				if match := artifactNameRe.FindStringSubmatch(name); match != nil {
+					out["topic"] = match[1]
+				}
+				break
+			}
+		}
+	}
+	return writeJSON(ctx, http.StatusOK, out)
 }
 
 // ---- SPA 静态资源 ----
@@ -694,46 +788,3 @@ func (s *Server) spaHandler() http.Handler {
 		_, _ = w.Write(data)
 	})
 }
-
-// ---- 邮件产物辅助 ----
-
-// emailFile 是一个 dry-run 邮件产物文件。
-type emailFile struct {
-	Name    string    `json:"name"`
-	Task    string    `json:"task"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"mod_time"`
-}
-
-// emailNameRe 匹配 dry-run 邮件文件名:email-<task>-<日期>-<时间>.md,
-// 同时用于 URL 段校验(防路径穿越)。
-var emailNameRe = regexp.MustCompile(`^email-(.+)-(\d{8}-\d{6})\.md$`)
-
-// listEmailFiles 列出产物目录下的邮件文件,最新在前。
-func listEmailFiles(dir string) []emailFile {
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return []emailFile{}
-	}
-	out := []emailFile{}
-	for _, e := range ents {
-		name := e.Name()
-		if e.IsDir() || !emailNameRe.MatchString(name) {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		ef := emailFile{Name: name, Size: info.Size(), ModTime: info.ModTime()}
-		if m := emailNameRe.FindStringSubmatch(name); m != nil {
-			ef.Task = m[1]
-		}
-		out = append(out, ef)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ModTime.After(out[j].ModTime) })
-	return out
-}
-
-// ctxBackground 返回处理器的 context(供需要 context.Context 的调用)。
-func ctxBackground(ctx khttp.Context) context.Context { return ctx }

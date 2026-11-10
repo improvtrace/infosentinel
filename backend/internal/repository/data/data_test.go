@@ -24,11 +24,12 @@ func seedConfig() *repository.Config {
 		Sources: repository.Sources{Search: repository.SearchConfig{Enabled: true}},
 		Topics:  []repository.Topic{{Name: "tp1", Prompt: "关注 AI"}},
 		Targets: []repository.Target{{Name: "m1", Type: "email", To: "a@b.c", SubjectPrefix: "[InfoSentinel]"}},
-		Tasks: []repository.Task{{
-			Name: "j1", Topic: "tp1", Targets: []string{"m1"}, Schedules: []string{"0 8 * * *", "30 20 * * *"},
+		Subscriptions: []repository.Subscription{{
+			Topic: "tp1", Cron: "0 8 * * *", Targets: []string{"m1"},
 		}},
-		LLM:    repository.LLMConfig{BaseURL: "https://api.deepseek.com", Model: "deepseek-chat", APIKeyEnv: "DEEPSEEK_API_KEY", Temperature: 0.3, TimeoutSec: 300, MaxStep: 25},
-		Mailer: repository.MailerConfig{Type: "dryrun", OutputDir: "output"},
+		LLM:     repository.LLMConfig{BaseURL: "https://api.deepseek.com", Model: "deepseek-chat", Temperature: 0.3, TimeoutSec: 300, MaxStep: 25},
+		Mailer:  repository.MailerConfig{Type: repository.MailerTypeInbox},
+		Storage: repository.StorageConfig{Type: repository.StorageTypeLocal, Path: "output", PeriodDays: 1, MaxDirs: 30},
 	}
 	if err := cfg.Finalize(); err != nil {
 		panic(err)
@@ -52,7 +53,7 @@ func TestMigrateAndSeedRoundTrip(t *testing.T) {
 		t.Fatalf("加载内置种子: %v", err)
 	}
 	if len(builtin.Topics) != 1 || builtin.Topics[0].Name != "ai-agent" ||
-		builtin.Mailer.OutputDir != ".tests/output" || builtin.Sources.Collect.StateDir != ".tests/data/state" {
+		builtin.Storage.Type != repository.StorageTypeLocal || builtin.Mailer.Type != repository.MailerTypeInbox {
 		t.Errorf("内置种子内容不符: %+v", builtin)
 	}
 
@@ -73,14 +74,14 @@ func TestMigrateAndSeedRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if got.LLM.Model != "deepseek-chat" || got.Mailer.OutputDir != "output" {
+	if got.LLM.Model != "deepseek-chat" || got.Storage.Path != "output" {
 		t.Errorf("settings 回读不符: %+v", got)
 	}
 	if len(got.Topics) != 1 || got.Topics[0].Prompt != "关注 AI" {
 		t.Errorf("topics 回读不符: %+v", got.Topics)
 	}
-	if len(got.Tasks) != 1 || got.Tasks[0].Schedules[1] != "30 20 * * *" {
-		t.Errorf("tasks 回读不符: %+v", got.Tasks)
+	if len(got.Subscriptions) != 1 || got.Subscriptions[0].Cron != "0 8 * * *" {
+		t.Errorf("subscriptions 回读不符: %+v", got.Subscriptions)
 	}
 	if !got.Sources.Search.Enabled {
 		t.Errorf("sources 回读不符: %+v", got.Sources)
@@ -125,8 +126,8 @@ func TestCRUDAndReferentialIntegrity(t *testing.T) {
 		t.Errorf("UsedByTarget = %d", n)
 	}
 	// 删除不存在
-	if err := d.DeleteTask(ctx, "ghost"); err == nil {
-		t.Fatal("删除不存在任务应报错")
+	if err := d.DeleteSubscription(ctx, "ghost"); err == nil {
+		t.Fatal("删除不存在订阅应报错")
 	}
 }
 

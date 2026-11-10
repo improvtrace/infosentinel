@@ -1,15 +1,16 @@
 // model.go 是数据库业务配置的模型层:类型定义、校验与查找辅助。
 //
-// 业务配置(sources/topics/targets/tasks/llm/mailer/server)全部存于 SQLite,
+// 业务配置(sources/topics/targets/subscriptions/llm/mailer/server)全部存于 SQLite,
 // 本文件提供运行时结构与校验;内置默认值由 repository/migrate 在迁移时初始化。
 package repository
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/robfig/cron/v3"
+
+	"github.com/tomasgdl/infosentinel/backend/pkg/storage"
 )
 
 // Config 是 infosentinel 的运行时顶层业务配置(由数据库组装)。
@@ -23,8 +24,8 @@ type Config struct {
 	// Targets 是推送目标(通道)列表。
 	Targets []Target `json:"targets"`
 
-	// Tasks 是任务列表:{主题, 推送目标, 调度表达式}。
-	Tasks []Task `json:"tasks"`
+	// Subscriptions 是订阅列表:{主题, cron, 推送目标};主题即订阅唯一标识。
+	Subscriptions []Subscription `json:"subscriptions"`
 
 	// Server 是 serve 模式的 Web 管理界面配置。
 	Server ServerConfig `json:"server"`
@@ -32,12 +33,17 @@ type Config struct {
 	// LLM 是模型服务配置(OpenAI 兼容协议),全局共用。
 	LLM LLMConfig `json:"llm"`
 
-	// Mailer 是发送器全局配置(dry-run 输出目录等)。
+	// Mailer 是发送器全局配置(站内信/smtp)。
 	Mailer MailerConfig `json:"mailer"`
+
+	// Storage 是产物空间全局配置(本地磁盘/SFTP/FTP 驱动 + 分桶保留策略)。
+	Storage StorageConfig `json:"storage"`
 }
 
-// Finalize 做完整校验(供从数据库组装的配置使用)。
+// Finalize 做完整校验(供从数据库组装的配置使用);先归一化历史遗留值。
 func (c *Config) Finalize() error {
+	c.Mailer.normalizeLegacy() // 旧库中的 dryrun 映射为站内信
+	c.Storage.finalize()       // 缺省补 local 与默认分桶参数(兼容无 storage 段的旧库)
 	return c.Validate()
 }
 
@@ -74,8 +80,6 @@ type CollectConfig struct {
 	MaxBodyChars int `json:"max_body_chars"`
 	// DedupDays 是 URL 去重状态保留天数,超过则重新允许出现。
 	DedupDays int `json:"dedup_days"`
-	// StateDir 是去重状态目录,每个任务一个文件:<state_dir>/<task>.json。
-	StateDir string `json:"state_dir"`
 }
 
 // RSSConfig 是 RSS 订阅源配置。
@@ -126,7 +130,7 @@ type Webpage struct {
 
 // Topic 是主题:一段外部撰写的 prompt,agent 据此采集与生成报告。
 type Topic struct {
-	// Name 是主题唯一标识,供任务引用。
+	// Name 是主题唯一标识,供订阅引用。
 	Name string `json:"name"`
 	// Prompt 是主题指令:关注什么、如何取舍、报告怎么写。
 	Prompt string `json:"prompt"`
@@ -134,7 +138,7 @@ type Topic struct {
 
 // Target 是推送目标(通道)。当前支持 email;后续可扩展 webhook 等。
 type Target struct {
-	// Name 是目标唯一标识,供任务引用。
+	// Name 是目标唯一标识,供订阅引用。
 	Name string `json:"name"`
 	// Type 是通道类型,当前仅支持 "email"。
 	Type string `json:"type"`
@@ -144,16 +148,15 @@ type Target struct {
 	SubjectPrefix string `json:"subject_prefix"`
 }
 
-// Task 是任务:{主题, 推送目标, 调度表达式}。
-type Task struct {
-	// Name 是任务唯一标识,也用于隔离去重状态文件。
-	Name string `json:"name"`
-	// Topic 引用主题名。
+// Subscription 是订阅:{主题, cron, 推送目标}。
+// 主题即订阅的唯一标识:一个主题最多一条订阅,也用于隔离去重状态与产物分桶。
+type Subscription struct {
+	// Topic 引用主题名(唯一)。
 	Topic string `json:"topic"`
+	// Cron 是单个 cron 表达式(五段),订阅的定时调度。
+	Cron string `json:"cron"`
 	// Targets 引用推送目标名,可多个。
 	Targets []string `json:"targets"`
-	// Schedules 是 cron 表达式列表(五段),每个表达式都会触发该任务。
-	Schedules []string `json:"schedules"`
 }
 
 // ServerConfig 是 serve 模式的 Web 管理界面配置。
@@ -173,8 +176,6 @@ type LLMConfig struct {
 	BaseURL string `json:"base_url"`
 	// Model 是模型名,例如 deepseek-chat。
 	Model string `json:"model"`
-	// APIKeyEnv 是存放 API Key 的环境变量名。
-	APIKeyEnv string `json:"api_key_env"`
 	// Temperature 是采样温度。
 	Temperature float32 `json:"temperature"`
 	// TimeoutSec 是单次模型请求超时。
@@ -183,14 +184,25 @@ type LLMConfig struct {
 	MaxStep int `json:"max_step"`
 }
 
+// 发送器投递类型:站内信(报告写入产物空间,界面在线查看)或 SMTP 真实发送邮件。
+const (
+	MailerTypeInbox = "站内信"
+	MailerTypeSMTP  = "smtp"
+)
+
 // MailerConfig 是发送器全局配置。
 type MailerConfig struct {
-	// Type 是发送器类型:dryrun(落盘不发送)或 smtp(内置 SMTP 客户端真实发送)。
+	// Type 是投递类型:站内信(报告写入产物空间,界面在线查看)或 smtp(内置发件邮箱真实发送)。
 	Type string `json:"type"`
-	// OutputDir 是 dryrun 模式下邮件文件输出目录。
-	OutputDir string `json:"output_dir"`
 	// Smtp 是内置发件邮箱(SMTP 账号)配置,type=smtp 时必须配置 host 与 from。
 	Smtp SmtpConfig `json:"smtp"`
+}
+
+// normalizeLegacy 归一化历史遗留的投递类型值(旧库中的 dryrun → 站内信)。
+func (m *MailerConfig) normalizeLegacy() {
+	if m.Type == "dryrun" {
+		m.Type = MailerTypeInbox
+	}
 }
 
 // SmtpConfig 是内置 SMTP 发件邮箱配置(服务内置的发送通道)。
@@ -201,12 +213,102 @@ type SmtpConfig struct {
 	Port int `json:"port"`
 	// Username 是 SMTP 登录用户名,通常是发件邮箱本身。
 	Username string `json:"username"`
-	// PasswordEnv 是存放 SMTP 密码/授权码的环境变量名(密码不落配置文件)。
-	PasswordEnv string `json:"password_env"`
 	// From 是发件人地址(展示在邮件 From 头)。
 	From string `json:"from"`
 	// SSL 是否使用隐式 TLS;nil 时按端口判断:465 → true,其余 → false(自动尝试 STARTTLS)。
 	SSL *bool `json:"ssl"`
+}
+
+// StorageConfig 是产物空间全局配置。
+type StorageConfig struct {
+	// Type 是存储驱动类型:local(本地磁盘)/ sftp / ftp。
+	Type string `json:"type"`
+	// Path 是产物路径(页面配置,相对存储根目录;空为根目录)。
+	// 本地磁盘实际路径 = 引导配置 storage.base_dir(绝对路径) + 本路径。
+	Path string `json:"path"`
+	// PeriodDays 是分桶周期:每 m 天的产物保存到同一个子目录(以周期起始日期命名)。
+	PeriodDays int `json:"period_days"`
+	// MaxDirs 是最多保留的分桶子目录数,超出自动删除最旧的。
+	MaxDirs int `json:"max_dirs"`
+	// SFTP 是 type=sftp 时的连接配置。
+	SFTP StorageSFTP `json:"sftp"`
+	// FTP 是 type=ftp 时的连接配置。
+	FTP StorageFTP `json:"ftp"`
+}
+
+// StorageSFTP 是 SFTP 驱动配置。
+type StorageSFTP struct {
+	// Host 是 SFTP 服务地址。
+	Host string `json:"host"`
+	// Port 是端口;0 取默认 22。
+	Port int `json:"port"`
+	// Username 是登录用户名。
+	Username string `json:"username"`
+	// KeyPath 是私钥文件路径(可选,与密码二选一或并存)。
+	KeyPath string `json:"key_path"`
+	// HostKey 是期望的远端公钥(authorized_keys 单行格式;空则不校验指纹)。
+	HostKey string `json:"host_key"`
+	// BaseDir 是远端基础目录(空为登录目录)。
+	BaseDir string `json:"base_dir"`
+}
+
+// StorageFTP 是 FTP 驱动配置。
+type StorageFTP struct {
+	// Host 是 FTP 服务地址。
+	Host string `json:"host"`
+	// Port 是端口;0 取默认 21。
+	Port int `json:"port"`
+	// Username 是登录用户名(空按匿名)。
+	Username string `json:"username"`
+	// BaseDir 是远端基础目录(空为登录目录)。
+	BaseDir string `json:"base_dir"`
+	// TLS 是否使用 FTPS(显式 TLS)。
+	TLS bool `json:"tls"`
+}
+
+// 产物空间存储驱动类型。
+const (
+	StorageTypeLocal = "local"
+	StorageTypeSFTP  = "sftp"
+	StorageTypeFTP   = "ftp"
+)
+
+// finalize 补齐产物空间配置缺省值:类型缺省 local,分桶参数缺省 1 天 / 30 个。
+func (s *StorageConfig) finalize() {
+	if s.Type == "" {
+		s.Type = StorageTypeLocal
+	}
+	if s.PeriodDays < 1 {
+		s.PeriodDays = 1
+	}
+	if s.MaxDirs < 1 {
+		s.MaxDirs = 30
+	}
+}
+
+// Validate 校验产物空间配置。
+func (s *StorageConfig) Validate() error {
+	switch s.Type {
+	case StorageTypeLocal, StorageTypeSFTP, StorageTypeFTP:
+	default:
+		return fmt.Errorf("storage.type 仅支持 local / sftp / ftp,当前为 %q", s.Type)
+	}
+	if _, err := storage.CleanRel(s.Path); err != nil {
+		return fmt.Errorf("storage.path 不合法: %w", err)
+	}
+	if s.PeriodDays < 1 {
+		return fmt.Errorf("storage.period_days 必须 >= 1,当前为 %d", s.PeriodDays)
+	}
+	if s.MaxDirs < 1 {
+		return fmt.Errorf("storage.max_dirs 必须 >= 1,当前为 %d", s.MaxDirs)
+	}
+	if s.Type == StorageTypeSFTP && s.SFTP.Host == "" {
+		return fmt.Errorf("storage.type=sftp 时必须配置 storage.sftp.host")
+	}
+	if s.Type == StorageTypeFTP && s.FTP.Host == "" {
+		return fmt.Errorf("storage.type=ftp 时必须配置 storage.ftp.host")
+	}
+	return nil
 }
 
 // Validate 检查配置合法性,返回发现的第一个问题。
@@ -217,9 +319,6 @@ func (c *Config) Validate() error {
 	}
 	if len(c.Targets) == 0 {
 		return fmt.Errorf("targets 不能为空:请至少配置一个推送目标")
-	}
-	if len(c.Tasks) == 0 {
-		return fmt.Errorf("tasks 不能为空:请至少定义一个任务")
 	}
 
 	// 数据源
@@ -256,38 +355,34 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if err := validateUnique(taskNames(c.Tasks), "task"); err != nil {
+	// 订阅:允许为空(全部退订是合法状态),但引用必须完整
+	if err := validateUnique(subscriptionTopics(c.Subscriptions), "subscription"); err != nil {
 		return err
 	}
 	topics := topicSet(c.Topics)
 	targets := targetSet(c.Targets)
-	for _, t := range c.Tasks {
-		if t.Name == "" {
-			return fmt.Errorf("task.name 不能为空")
+	for _, s := range c.Subscriptions {
+		if s.Topic == "" {
+			return fmt.Errorf("subscription.topic 不能为空")
 		}
-		if _, ok := topics[t.Topic]; !ok {
-			return fmt.Errorf("task %q 引用了不存在的 topic %q", t.Name, t.Topic)
+		if _, ok := topics[s.Topic]; !ok {
+			return fmt.Errorf("subscription 引用了不存在的 topic %q", s.Topic)
 		}
-		if len(t.Targets) == 0 {
-			return fmt.Errorf("task %q 未配置任何 targets", t.Name)
+		if len(s.Targets) == 0 {
+			return fmt.Errorf("订阅 %q 未配置任何 targets", s.Topic)
 		}
 		seen := map[string]struct{}{}
-		for _, ref := range t.Targets {
+		for _, ref := range s.Targets {
 			if _, ok := targets[ref]; !ok {
-				return fmt.Errorf("task %q 引用了不存在的 target %q", t.Name, ref)
+				return fmt.Errorf("订阅 %q 引用了不存在的 target %q", s.Topic, ref)
 			}
 			if _, dup := seen[ref]; dup {
-				return fmt.Errorf("task %q 的 targets 中 %q 重复", t.Name, ref)
+				return fmt.Errorf("订阅 %q 的 targets 中 %q 重复", s.Topic, ref)
 			}
 			seen[ref] = struct{}{}
 		}
-		if len(t.Schedules) == 0 {
-			return fmt.Errorf("task %q 未配置任何 schedules", t.Name)
-		}
-		for _, sched := range t.Schedules {
-			if _, err := cron.ParseStandard(sched); err != nil {
-				return fmt.Errorf("task %q 的 cron 表达式 %q 不合法: %v", t.Name, sched, err)
-			}
+		if _, err := cron.ParseStandard(s.Cron); err != nil {
+			return fmt.Errorf("订阅 %q 的 cron 表达式 %q 不合法: %v", s.Topic, s.Cron, err)
 		}
 	}
 
@@ -306,6 +401,9 @@ func (c *Config) Validate() error {
 	}
 
 	if err := c.Mailer.Validate(); err != nil {
+		return err
+	}
+	if err := c.Storage.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -336,11 +434,11 @@ func (s *Sources) Validate() error {
 // Validate 校验发送器配置。
 func (m *MailerConfig) Validate() error {
 	switch m.Type {
-	case "dryrun", "smtp":
+	case MailerTypeInbox, MailerTypeSMTP:
 	default:
-		return fmt.Errorf("mailer.type 仅支持 dryrun / smtp,当前为 %q", m.Type)
+		return fmt.Errorf("mailer.type 仅支持 站内信 / smtp,当前为 %q", m.Type)
 	}
-	if m.Type == "smtp" && (m.Smtp.Host == "" || m.Smtp.From == "") {
+	if m.Type == MailerTypeSMTP && (m.Smtp.Host == "" || m.Smtp.From == "") {
 		return fmt.Errorf("mailer.type=smtp 时必须配置 mailer.smtp.host 与 mailer.smtp.from")
 	}
 	return nil
@@ -366,19 +464,14 @@ func (c *Config) TargetByName(name string) *Target {
 	return nil
 }
 
-// TaskByName 按名称查找任务,找不到返回 nil。
-func (c *Config) TaskByName(name string) *Task {
-	for i := range c.Tasks {
-		if c.Tasks[i].Name == name {
-			return &c.Tasks[i]
+// SubscriptionByTopic 按主题查找订阅,找不到返回 nil。
+func (c *Config) SubscriptionByTopic(topic string) *Subscription {
+	for i := range c.Subscriptions {
+		if c.Subscriptions[i].Topic == topic {
+			return &c.Subscriptions[i]
 		}
 	}
 	return nil
-}
-
-// APIKey 从环境变量读取模型 API Key。
-func (c *Config) APIKey() string {
-	return os.Getenv(c.LLM.APIKeyEnv)
 }
 
 // HTTPTimeout 返回采集请求超时。
@@ -404,10 +497,10 @@ func targetNames(ts []Target) []string {
 	return out
 }
 
-func taskNames(ts []Task) []string {
-	out := make([]string, len(ts))
-	for i, t := range ts {
-		out[i] = t.Name
+func subscriptionTopics(ss []Subscription) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = s.Topic
 	}
 	return out
 }

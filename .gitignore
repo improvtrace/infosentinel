@@ -17,3 +17,5 @@ frontend/node_modules/
 .idea/
 .vscode/
 .zcode/
+.agents/
+skills-lock.json

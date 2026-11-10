@@ -4,12 +4,12 @@ package main
 
 import "fmt"
 
-func errTaskNotFound(name string) error {
-	return fmt.Errorf("任务 %q 不存在", name)
+func errSubscriptionNotFound(topic string) error {
+	return fmt.Errorf("订阅 %q 不存在", topic)
 }
 
-func errTaskRunning(name string) error {
-	return fmt.Errorf("任务 %q 正在运行中", name)
+func errSubscriptionRunning(topic string) error {
+	return fmt.Errorf("订阅 %q 正在运行中", topic)
 }
 
 func errTargetNotFound(name string) error {

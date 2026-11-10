@@ -6,10 +6,10 @@
 //
 // 用法:
 //
-//	infosentinel run                 执行全部任务
-//	infosentinel run -task name      只执行指定任务
-//	infosentinel serve               常驻,按各任务的 schedules 定时执行(含 Web 管理)
-//	infosentinel list                打印主题/目标/任务一览
+//	infosentinel run                 执行全部订阅
+//	infosentinel run -topic name     只执行指定主题的订阅
+//	infosentinel serve               常驻,按各订阅的 cron 定时执行(含 Web 管理)
+//	infosentinel list                打印主题/目标/订阅一览
 //	infosentinel migrate             初始化/升级数据库并写入内置默认配置后退出
 //	infosentinel -c other.yaml run   指定引导配置文件
 package main
@@ -24,11 +24,11 @@ import (
 
 	klog "github.com/go-kratos/kratos/v2/log"
 
+	"github.com/tomasgdl/infosentinel/backend/internal/artifact"
 	"github.com/tomasgdl/infosentinel/backend/internal/config"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data"
 	"github.com/tomasgdl/infosentinel/backend/internal/runner"
-	"github.com/tomasgdl/infosentinel/backend/internal/secret"
 )
 
 // version 由构建注入(make build 时 -ldflags "-X main.version=..."),默认 dev。
@@ -40,14 +40,14 @@ const usage = `infosentinel — 基于 Eino 的兴趣资讯收集 Agent
   infosentinel [flags] <run|serve|list|migrate>
 
 子命令:
-  run     执行任务(默认全部;配合 -task 只跑一个),采集 → 总结 → 推送
-  serve   常驻运行,按各任务 schedules 定时执行;内置 Web 管理界面(kratos HTTP)
-  list    打印配置中的主题 / 推送目标 / 任务一览
+  run     执行订阅(默认全部;配合 -topic 只跑一个),采集 → 总结 → 推送
+  serve   常驻运行,按各订阅 cron 定时执行;内置 Web 管理界面(kratos HTTP)
+  list    打印配置中的主题 / 推送目标 / 订阅一览
   migrate 初始化或升级数据库表结构;空库写入内置默认配置(幂等)后退出
 
 Flags:
-  -c string     引导配置文件路径(默认 "config.yaml";仅含 database / log)
-  -task string  run 子命令:只执行指定名字的任务
+  -c string     引导配置文件路径(默认 "config.yaml";仅含 database / log / storage)
+  -topic string  run 子命令:只执行指定主题的订阅
   -version      打印版本信息
 `
 
@@ -56,17 +56,17 @@ type cliApp struct {
 	Boot    *config.Bootstrap
 	Data    *data.Data
 	Log     *klog.Helper
-	Secrets *secret.Resolver
+	Secrets *config.Resolver
 }
 
 func main() {
 	var (
 		cfgPath     string
-		taskName    string
+		topicName   string
 		showVersion bool
 	)
 	flag.StringVar(&cfgPath, "c", "config.yaml", "引导配置文件路径")
-	flag.StringVar(&taskName, "task", "", "run 子命令:只执行指定名字的任务")
+	flag.StringVar(&topicName, "topic", "", "run 子命令:只执行指定主题的订阅")
 	flag.BoolVar(&showVersion, "version", false, "打印版本信息")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
@@ -86,7 +86,7 @@ func main() {
 	case "serve":
 		serveMain(cfgPath)
 	case "run", "list", "migrate":
-		cliMain(cmd, cfgPath, taskName)
+		cliMain(cmd, cfgPath, topicName)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %q\n\n%s", cmd, usage)
 		os.Exit(2)
@@ -106,7 +106,7 @@ func serveMain(cfgPath string) {
 }
 
 // cliMain CLI 子命令:wire 构造依赖后分发。
-func cliMain(cmd, cfgPath, taskName string) {
+func cliMain(cmd, cfgPath, topicName string) {
 	cli, cleanup, err := initCLI(cfgPath)
 	if err != nil {
 		log.Fatalf("初始化失败: %v", err)
@@ -135,13 +135,13 @@ func cliMain(cmd, cfgPath, taskName string) {
 		"version", version,
 		"db", cli.Boot.Database.Path,
 		"log", cli.Boot.Log.Path,
-		"tasks", len(cfg.Tasks),
+		"subscriptions", len(cfg.Subscriptions),
 		"schema_version", cli.Data.MigrationResult().To,
 	)
 
 	switch cmd {
 	case "run":
-		run(cfg, cli.Secrets, cli.Log, taskName)
+		run(cfg, cli.Boot, cli.Secrets, cli.Log, topicName)
 	case "list":
 		list(cfg)
 	}
@@ -172,40 +172,51 @@ func loadEffective(lg *klog.Helper, repo repository.Repository) *repository.Conf
 	return cfg
 }
 
-// selectTasks 按 -task 参数筛选要执行的任务;空 = 全部。
-func selectTasks(cfg *repository.Config, name string) ([]repository.Task, error) {
-	if name == "" {
-		return cfg.Tasks, nil
+// selectSubscriptions 按 -topic 参数筛选要执行的订阅;空 = 全部。
+func selectSubscriptions(cfg *repository.Config, topic string) ([]repository.Subscription, error) {
+	if topic == "" {
+		return cfg.Subscriptions, nil
 	}
-	t := cfg.TaskByName(name)
-	if t == nil {
-		return nil, fmt.Errorf("任务 %q 不存在(可用 list 子命令查看)", name)
+	s := cfg.SubscriptionByTopic(topic)
+	if s == nil {
+		return nil, fmt.Errorf("订阅 %q 不存在(可用 list 子命令查看)", topic)
 	}
-	return []repository.Task{*t}, nil
+	return []repository.Subscription{*s}, nil
 }
 
-// run 执行选中的任务;单个任务失败不影响其余任务,最后汇总退出码。
-func run(cfg *repository.Config, secrets *secret.Resolver, lg *klog.Helper, name string) {
-	tasks, err := selectTasks(cfg, name)
+// run 执行选中的订阅;单个订阅失败不影响其余订阅,最后汇总退出码。
+func run(cfg *repository.Config, boot *config.Bootstrap, secrets *config.Resolver, lg *klog.Helper, topic string) {
+	subs, err := selectSubscriptions(cfg, topic)
 	if err != nil {
-		lg.Fatalf("选择任务失败: %v", err)
+		lg.Fatalf("选择订阅失败: %v", err)
 	}
 
-	r := runner.New(cfg, secrets, lg)
+	// 产物空间:站内信投递写入;密码缺失不致命(本地驱动/私钥登录不需要)
+	ctx := context.Background()
+	password, perr := secrets.StoragePassword(ctx, "")
+	if perr != nil {
+		lg.Warnf("storage_password_resolve_failed err=%v", perr)
+	}
+	arts, err := artifact.Build(&cfg.Storage, boot.Storage.BaseDir, password)
+	if err != nil {
+		lg.Fatalf("初始化产物空间失败: %v", err)
+	}
+
+	r := runner.New(cfg, secrets, arts, boot.StateDir, lg)
 	var failed []string
-	for _, t := range tasks {
+	for _, s := range subs {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.LLM.TimeoutSec)*time.Second)
-		_, err := r.RunTask(ctx, t)
+		_, err := r.RunTask(ctx, s)
 		cancel()
 		if err != nil {
-			lg.Warnf("task_run_failed task=%s err=%v", t.Name, err)
-			failed = append(failed, t.Name)
+			lg.Warnf("sub_run_failed topic=%s err=%v", s.Topic, err)
+			failed = append(failed, s.Topic)
 		}
 	}
 	if len(failed) > 0 {
-		lg.Fatalf("执行结束,%d/%d 个任务失败: %v", len(failed), len(tasks), failed)
+		lg.Fatalf("执行结束,%d/%d 个订阅失败: %v", len(failed), len(subs), failed)
 	}
-	lg.Infow("run_finished", "tasks", len(tasks))
+	lg.Infow("run_finished", "subscriptions", len(subs))
 }
 
 // list 打印配置概览。
@@ -218,9 +229,8 @@ func list(cfg *repository.Config) {
 	for _, t := range cfg.Targets {
 		fmt.Printf("  %-20s %-6s → %s\n", t.Name, t.Type, t.To)
 	}
-	fmt.Println("任务:")
-	for _, t := range cfg.Tasks {
-		fmt.Printf("  %-20s topic=%-20s targets=%v schedules=%v\n",
-			t.Name, t.Topic, t.Targets, t.Schedules)
+	fmt.Println("订阅:")
+	for _, s := range cfg.Subscriptions {
+		fmt.Printf("  topic=%-20s cron=%-14s targets=%v\n", s.Topic, s.Cron, s.Targets)
 	}
 }

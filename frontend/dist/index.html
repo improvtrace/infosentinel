@@ -3,9 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>InfoSentinel</title>
-    <script type="module" crossorigin src="/assets/index-P_1vhblf.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BXUyPyMK.css">
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F6FA" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B0E16" />
+    <title>InfoSentinel 控制台</title>
+    <style>
+      /* 首帧防闪白/闪黑:与主题底色一致 */
+      html { background: #f4f6fa }
+      @media (prefers-color-scheme: dark) { html { background: #0b0e16 } }
+    </style>
+    <script type="module" crossorigin src="/assets/index-SHivo4XN.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DKKmLUZv.css">
   </head>
   <body>
     <div id="root"></div>

@@ -3,7 +3,7 @@
 # 产物位置约定:
 #   artifacts/           编译产物(artifacts/bin/infosentinel、artifacts/dist/*.tar.gz)
 #   frontend/dist/       前端构建产物(go:embed 输入,随仓库提交)
-#   .tests/              运行时依赖与输出(数据库、日志、去重状态、dry-run 邮件、覆盖率);make clean 不清理它
+#   .tests/              运行时依赖与输出(数据库、日志、去重状态、产物空间、覆盖率);make clean 不清理它
 #
 # 部署:路径由 config.yaml 决定(见 hack/deploy/install.sh);
 # systemd 部署默认位于 $PREFIX/{bin,config,.tests},详见 hack/deploy/

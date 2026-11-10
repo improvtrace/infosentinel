@@ -15,7 +15,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
-	"github.com/tomasgdl/infosentinel/backend/internal/tools"
+	"github.com/tomasgdl/infosentinel/backend/pkg/tools"
 )
 
 // Channel 描述一个已启用的采集渠道,用于在系统提示词中向 LLM 说明可用工具。
@@ -32,10 +32,10 @@ type Agent struct {
 }
 
 // NewChatModel 按全局 LLM 配置与已解析的 API Key 创建 OpenAI 兼容 ChatModel。
-// API Key 由调用方通过 secret.Resolver 解析(环境变量优先,其次数据库密文)。
+// API Key 由调用方通过 config.Resolver 解析(页面配置,加密存储)。
 func NewChatModel(ctx context.Context, cfg *repository.Config, apiKey string) (*openai.ChatModel, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("模型 API Key 为空:请设置环境变量 %s 或在 Web 界面填写", cfg.LLM.APIKeyEnv)
+		return nil, fmt.Errorf("模型 API Key 未配置:请在 Web 界面“配置 → 全局设置”中填写并加密保存")
 	}
 	cm, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		BaseURL:     cfg.LLM.BaseURL,

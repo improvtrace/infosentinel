@@ -32,6 +32,50 @@ var (
 		Columns:    SettingsColumns,
 		PrimaryKey: []*schema.Column{SettingsColumns[0]},
 	}
+	// SubscriptionsColumns holds the columns for the "subscriptions" table.
+	SubscriptionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "topic", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "cron", Type: field.TypeString},
+		{Name: "targets", Type: field.TypeJSON},
+	}
+	// SubscriptionsTable holds the schema information for the "subscriptions" table.
+	SubscriptionsTable = &schema.Table{
+		Name:       "subscriptions",
+		Columns:    SubscriptionsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionsColumns[0]},
+	}
+	// SubscriptionRunsColumns holds the columns for the "subscription_runs" table.
+	SubscriptionRunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "topic", Type: field.TypeString, Size: 64},
+		{Name: "trigger", Type: field.TypeString, Size: 16},
+		{Name: "status", Type: field.TypeString, Size: 16},
+		{Name: "started_at", Type: field.TypeTime},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true},
+		{Name: "duration", Type: field.TypeInt64, Default: 0},
+		{Name: "error", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "subject", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "body", Type: field.TypeString, Size: 2147483647, Default: ""},
+	}
+	// SubscriptionRunsTable holds the schema information for the "subscription_runs" table.
+	SubscriptionRunsTable = &schema.Table{
+		Name:       "subscription_runs",
+		Columns:    SubscriptionRunsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionRunsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionrun_topic_started_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionRunsColumns[1], SubscriptionRunsColumns[4]},
+			},
+			{
+				Name:    "subscriptionrun_started_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionRunsColumns[4]},
+			},
+		},
+	}
 	// TargetsColumns holds the columns for the "targets" table.
 	TargetsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -45,20 +89,6 @@ var (
 		Name:       "targets",
 		Columns:    TargetsColumns,
 		PrimaryKey: []*schema.Column{TargetsColumns[0]},
-	}
-	// TasksColumns holds the columns for the "tasks" table.
-	TasksColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "name", Type: field.TypeString, Unique: true, Size: 64},
-		{Name: "topic", Type: field.TypeString},
-		{Name: "targets", Type: field.TypeJSON},
-		{Name: "schedules", Type: field.TypeJSON},
-	}
-	// TasksTable holds the schema information for the "tasks" table.
-	TasksTable = &schema.Table{
-		Name:       "tasks",
-		Columns:    TasksColumns,
-		PrimaryKey: []*schema.Column{TasksColumns[0]},
 	}
 	// TopicsColumns holds the columns for the "topics" table.
 	TopicsColumns = []*schema.Column{
@@ -76,8 +106,9 @@ var (
 	Tables = []*schema.Table{
 		SecretsTable,
 		SettingsTable,
+		SubscriptionsTable,
+		SubscriptionRunsTable,
 		TargetsTable,
-		TasksTable,
 		TopicsTable,
 	}
 )

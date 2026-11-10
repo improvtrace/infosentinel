@@ -15,7 +15,7 @@ make frontend   # 前端构建(npm ci + vite build → frontend/dist)
 make wire       # 生成 wire 依赖注入代码(依赖图变更后执行)
 make build      # 编译 artifacts/bin/infosentinel(前端内嵌,注入 git 版本)
 make serve      # 启动(空库自动写入内置默认配置)
-make run ARGS="-task ai-name"   # 单轮执行
+make run ARGS="-topic ai-agent"  # 单轮执行(按订阅主题)
 make migrate    # 初始化/升级数据库;空库写入内置默认配置后退出
 make package    # 一键打包 artifacts/dist/infosentinel-<ver>-<os>-<arch>.tar.gz
 make check      # vet + test + build
@@ -93,14 +93,15 @@ npm run build   # tsc --noEmit + vite build
 | `GET/POST /api/topics` · `PUT/DELETE /api/topics/{name}` | 主题 CRUD |
 | `GET/POST /api/targets` · `PUT/DELETE /api/targets/{name}` | 推送目标 CRUD |
 | `POST /api/targets/{name}/test` | 发送测试邮件 |
-| `GET/POST /api/tasks` · `PUT/DELETE /api/tasks/{name}` | 任务 CRUD |
-| `POST /api/tasks/{name}/run` | 手动触发(运行中 409) |
+| `GET/POST /api/subscriptions` · `PUT/DELETE /api/subscriptions/{topic}` | 订阅 CRUD(主题即订阅身份;`{topic, cron, targets}`) |
+| `POST /api/subscriptions/{topic}/run` | 手动触发(运行中 409) |
 | `GET/PUT /api/sources` | 数据源(YAML) |
-| `GET /api/settings` · `PUT /api/settings/{llm\|mailer\|server}` | 全局设置 |
-| `GET /api/secrets` · `PUT/DELETE /api/secrets/{name}` | 密钥名称 / 加密保存 / 删除 |
+| `GET /api/settings` · `PUT /api/settings/{llm\|mailer\|server\|storage}` | 全局设置(请求体可附带 `secret` 字段,随保存一并加密落库,对应分区密钥 `llm.api_key` / `smtp.password` / `storage.password`) |
+| `POST /api/settings/llm/test` · `POST /api/settings/mailer/test` | 测试模型 / 发送器配置(表单值,不落库) |
+| `GET /api/secrets` · `DELETE /api/secrets/{name}` | 密钥名称 / 删除 |
 | `POST /api/apply` | 手动重载配置并重建调度 |
-| `GET /api/runs?task=&limit=` · `GET /api/runs/{id}` | 运行历史 |
-| `GET /api/emails` · `GET /api/emails/{name}` | dry-run 邮件产物 |
+| `GET /api/runs?topic=&limit=` · `GET /api/runs/{id}` | 运行历史(subscription_runs 表持久化) |
+| `GET /api/artifacts` · `GET /api/artifacts/{bucket}/{name}` | 产物空间(HTML 产物,支持 ?topic= 过滤) |
 | `GET /api/healthz` | 健康状态 |
 
 写操作语义:整份配置 `Finalize()` 校验 → 落库 → 自动 `Apply()` 热生效;
@@ -110,9 +111,9 @@ npm run build   # tsc --noEmit + vite build
 
 - 输出:JSON 行 → `log.path` + stdout(kratos log)
 - 事件:`startup` `database_seeded` `scheduler_started` `scheduler_applied`
-  `task_run_done` `task_run_failed` `api_request` `secret_saved` `shutdown`
-- 字段约定见 `backend/internal/logger` 的 `Key*` 常量;调用示例:
-  `lg.Infow("task_run_done", logger.KeyTask, name, logger.KeyStatus, "success")`
+  `sub_run_done` `sub_run_failed` `api_request` `secret_saved` `shutdown`
+- 字段约定见 `backend/pkg/logger` 的 `Key*` 常量;调用示例:
+  `lg.Infow("sub_run_done", logger.KeyTopic, topic, logger.KeyStatus, "success")`
 
 ## 测试
 
@@ -139,7 +140,7 @@ sudo ./scripts/uninstall.sh [--purge]
 
 - 目录:`bin/ config/ .tests/`(运行时路径由 config.yaml 决定,默认 .tests/...;见 README)
 - systemd 单元使用 `User=infosentinel`,环境变量文件 `/usr/local/infosentinel/config/env`
-  (`DEEPSEEK_API_KEY=...` / `INFOSENTINEL_ENCRYPT_KEY=...`)
+  (`INFOSENTINEL_ENCRYPT_KEY=...`;业务配置与密钥均在 Web 界面维护,不读环境变量)
 - 升级:替换二进制后重启(自动迁移);可先执行 `infosentinel migrate` 预检/预迁移;
   回滚:保留旧二进制即可(若新版本已升级数据库,旧程序会拒绝启动以避免破坏数据)
 - 日志:`journalctl -u infosentinel -f` 或 `.tests/logs/infosentinel.log`
@@ -150,6 +151,6 @@ sudo ./scripts/uninstall.sh [--purge]
 - **加密保存失败**:未设置 `INFOSENTINEL_ENCRYPT_KEY`;设置后重启服务
 - **解密失败(主密钥不匹配)**:加密主密钥被更换;恢复原主密钥或删除并重新填写密钥
 - **改了 config.yaml 业务字段无效**:业务配置在数据库;请用界面修改或删库重启
-- **任务总失败**:`./artifacts/bin/infosentinel run -task <name>` 单独排查;看结构化日志的 `task_run_failed`
+- **订阅总失败**:`./artifacts/bin/infosentinel run -topic <name>` 单独排查;看结构化日志的 `sub_run_failed`
 - **DuckDuckGo 不可达**:关闭 `search.enabled` 或为 `ddgsearch` 配置代理
 - **serve 未按预期触发**:cron 为本地时区五段表达式;启动日志含 `schedule_registered`(next 时间)

@@ -16,6 +16,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(repository.Repository), new(*Data)),
 	wire.Bind(new(repository.SecretRepository), new(*Data)),
 	wire.Bind(new(repository.ConfigRepository), new(*Data)),
+	wire.Bind(new(repository.RunRepository), new(*Data)),
 )
 
 // NewOptions 从引导配置构造数据层初始化参数。

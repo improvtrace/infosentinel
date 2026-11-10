@@ -1,21 +1,21 @@
 # ============================================================
 # InfoSentinel 引导配置(config.yaml)
 #
-# 本文件只保留部署相关的必要引导项:
-#   database  数据库位置(SQLite,业务配置的唯一事实源)
-#   log       日志文件与级别(JSON 行,同时输出到 stdout)
+# 本文件只保留部署相关的必要引导项(均为路径/级别,不含业务配置):
+#   database   数据库位置(SQLite,业务配置的唯一事实源)
+#   log        日志文件与级别(JSON 行,同时输出到 stdout)
+#   storage    产物空间本地磁盘根目录(SFTP/FTP 的连接配置在 Web 界面维护)
+#   state_dir  运行时状态目录(采集去重记录,每个任务一个 <task>.json)
 #
 # 路径相对工作目录;运行时产物统一收在 .tests/ 下,
 # 部署时按实际环境在此修改(安装脚本不强制改写)。
 #
 # 业务配置(sources / topics / targets / tasks / llm / mailer / server)
-# 全部存于数据库,通过 Web 管理界面维护 —— 不再需要手改配置文件。
+# 全部存于数据库,通过 Web 管理界面维护 —— 不需要改配置文件,也不读环境变量:
 #   首次初始化:migrate 子命令或首次启动时空库写入内置默认配置
 #   重置配置:停止服务 → 删除数据库文件 → 重启
-#   敏感数据:模型 API Key / SMTP 授权码可在界面填写(加密存储),
-#             也可通过环境变量注入(优先):
-#               DEEPSEEK_API_KEY / SMTP_PASSWORD
-#               INFOSENTINEL_ENCRYPT_KEY(加密主密钥,启用加密存储时必需)
+#   敏感数据:模型 API Key / SMTP 授权码在界面“全局设置”填写(加密存储);
+#             加密主密钥通过环境变量注入:INFOSENTINEL_ENCRYPT_KEY
 # ============================================================
 
 database:
@@ -24,3 +24,11 @@ database:
 log:
   path: ".tests/logs/infosentinel.log"
   level: "INFO"          # DEBUG / INFO / WARN / ERROR
+
+# 产物空间(本地磁盘驱动)根目录,推荐绝对路径;
+# 界面配置的产物路径(storage.path)相对本目录
+storage:
+  base_dir: ".tests/artifacts"
+
+# 运行时状态目录(采集去重记录)
+state_dir: ".tests/data/state"

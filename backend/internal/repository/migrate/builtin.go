@@ -21,7 +21,6 @@ func Builtins() (*repository.Config, error) {
 				HTTPTimeoutSec:    20,
 				MaxBodyChars:      4000,
 				DedupDays:         7,
-				StateDir:          ".tests/data/state",
 			},
 			RSS: repository.RSSConfig{
 				Enabled: true,
@@ -63,12 +62,11 @@ func Builtins() (*repository.Config, error) {
 				SubjectPrefix: "[InfoSentinel]",
 			},
 		},
-		Tasks: []repository.Task{
+		Subscriptions: []repository.Subscription{
 			{
-				Name:      "ai-agent-daily",
-				Topic:     "ai-agent",
-				Targets:   []string{"mailbox"},
-				Schedules: []string{"0 8 * * *"},
+				Topic:   "ai-agent",
+				Cron:    "0 8 * * *",
+				Targets: []string{"mailbox"},
 			},
 		},
 		Server: repository.ServerConfig{
@@ -78,18 +76,21 @@ func Builtins() (*repository.Config, error) {
 		LLM: repository.LLMConfig{
 			BaseURL:     "https://api.deepseek.com",
 			Model:       "deepseek-chat",
-			APIKeyEnv:   "DEEPSEEK_API_KEY",
 			Temperature: 0.3,
 			TimeoutSec:  300,
 			MaxStep:     25,
 		},
 		Mailer: repository.MailerConfig{
-			Type:      "dryrun",
-			OutputDir: ".tests/output",
+			Type: repository.MailerTypeInbox,
 			Smtp: repository.SmtpConfig{
-				Port:        465,
-				PasswordEnv: "SMTP_PASSWORD",
+				Port: 465,
 			},
+		},
+		Storage: repository.StorageConfig{
+			Type:       repository.StorageTypeLocal,
+			Path:       "",
+			PeriodDays: 1,
+			MaxDirs:    30,
 		},
 	}
 	if err := cfg.Finalize(); err != nil {

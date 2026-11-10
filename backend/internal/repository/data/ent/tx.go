@@ -16,10 +16,12 @@ type Tx struct {
 	Secret *SecretClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// Subscription is the client for interacting with the Subscription builders.
+	Subscription *SubscriptionClient
+	// SubscriptionRun is the client for interacting with the SubscriptionRun builders.
+	SubscriptionRun *SubscriptionRunClient
 	// Target is the client for interacting with the Target builders.
 	Target *TargetClient
-	// Task is the client for interacting with the Task builders.
-	Task *TaskClient
 	// Topic is the client for interacting with the Topic builders.
 	Topic *TopicClient
 
@@ -155,8 +157,9 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Secret = NewSecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
+	tx.Subscription = NewSubscriptionClient(tx.config)
+	tx.SubscriptionRun = NewSubscriptionRunClient(tx.config)
 	tx.Target = NewTargetClient(tx.config)
-	tx.Task = NewTaskClient(tx.config)
 	tx.Topic = NewTopicClient(tx.config)
 }
 

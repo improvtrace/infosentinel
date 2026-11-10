@@ -11,7 +11,7 @@ import (
 var configStub = repository.Config{}
 
 func TestWithSlotGuard(t *testing.T) {
-	r := New(&configStub, nil, nil)
+	r := New(&configStub, nil, nil, "", nil)
 
 	release := make(chan struct{})
 	started := make(chan struct{})

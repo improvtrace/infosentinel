@@ -12,7 +12,7 @@ Group=infosentinel
 ExecStart=__PREFIX__/bin/infosentinel -c __PREFIX__/config/config.yaml serve
 Restart=on-failure
 RestartSec=5
-# 环境文件:DEEPSEEK_API_KEY / SMTP_PASSWORD / INFOSENTINEL_ENCRYPT_KEY 等
+# 环境文件:INFOSENTINEL_ENCRYPT_KEY(加密主密钥;业务配置与密钥均在 Web 界面维护)
 EnvironmentFile=-__PREFIX__/config/env
 
 # 安全加固

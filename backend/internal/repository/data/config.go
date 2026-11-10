@@ -15,6 +15,7 @@ const (
 	settingLLM     = "llm"
 	settingMailer  = "mailer"
 	settingServer  = "server"
+	settingStorage = "storage"
 )
 
 // LoadConfig 实现 repository.ConfigRepository:从各表组装完整配置并校验。
@@ -27,6 +28,7 @@ func (d *Data) LoadConfig(ctx context.Context) (*repository.Config, error) {
 		settingLLM:     &cfg.LLM,
 		settingMailer:  &cfg.Mailer,
 		settingServer:  &cfg.Server,
+		settingStorage: &cfg.Storage,
 	} {
 		err := d.GetSetting(ctx, key, dst)
 		if err != nil && err != repository.ErrNotFound {
@@ -41,7 +43,7 @@ func (d *Data) LoadConfig(ctx context.Context) (*repository.Config, error) {
 	if cfg.Targets, err = d.ListTargets(ctx); err != nil {
 		return nil, err
 	}
-	if cfg.Tasks, err = d.ListTasks(ctx); err != nil {
+	if cfg.Subscriptions, err = d.ListSubscriptions(ctx); err != nil {
 		return nil, err
 	}
 
@@ -56,7 +58,7 @@ func (d *Data) IsEmpty(ctx context.Context) (bool, error) {
 	counts := []func(context.Context) (int, error){
 		d.client.Topic.Query().Count,
 		d.client.Target.Query().Count,
-		d.client.Task.Query().Count,
+		d.client.Subscription.Query().Count,
 		d.client.Setting.Query().Count,
 	}
 	for _, count := range counts {
@@ -85,8 +87,8 @@ func (d *Data) SeedFromConfig(ctx context.Context, c *repository.Config) error {
 	if _, err := tx.Target.Delete().Exec(ctx); err != nil {
 		return fmt.Errorf("清空推送目标: %w", err)
 	}
-	if _, err := tx.Task.Delete().Exec(ctx); err != nil {
-		return fmt.Errorf("清空任务: %w", err)
+	if _, err := tx.Subscription.Delete().Exec(ctx); err != nil {
+		return fmt.Errorf("清空订阅: %w", err)
 	}
 	if _, err := tx.Setting.Delete().Exec(ctx); err != nil {
 		return fmt.Errorf("清空设置: %w", err)
@@ -104,11 +106,11 @@ func (d *Data) SeedFromConfig(ctx context.Context, c *repository.Config) error {
 			return fmt.Errorf("导入推送目标 %q: %w", t.Name, err)
 		}
 	}
-	for _, t := range c.Tasks {
-		if err := tx.Task.Create().
-			SetName(t.Name).SetTopic(t.Topic).SetTargets(t.Targets).SetSchedules(t.Schedules).
+	for _, s := range c.Subscriptions {
+		if err := tx.Subscription.Create().
+			SetTopic(s.Topic).SetCron(s.Cron).SetTargets(s.Targets).
 			Exec(ctx); err != nil {
-			return fmt.Errorf("导入任务 %q: %w", t.Name, err)
+			return fmt.Errorf("导入订阅 %q: %w", s.Topic, err)
 		}
 	}
 
@@ -117,6 +119,7 @@ func (d *Data) SeedFromConfig(ctx context.Context, c *repository.Config) error {
 		settingLLM:     c.LLM,
 		settingMailer:  c.Mailer,
 		settingServer:  c.Server,
+		settingStorage: c.Storage,
 	}
 	for key, v := range sections {
 		if err := putSettingTx(ctx, tx, key, v); err != nil {

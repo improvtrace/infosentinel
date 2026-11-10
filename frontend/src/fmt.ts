@@ -28,3 +28,10 @@ export function uptime(sec: number): string {
   if (s < 3600) return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
   return `${Math.floor(s / 3600)} 时 ${Math.floor((s % 3600) / 60)} 分`
 }
+
+// triggerLabel 把运行记录的触发方式映射为中文展示。
+export function triggerLabel(t?: string): string {
+  if (t === 'schedule') return '定时'
+  if (t === 'manual') return '手动'
+  return t ?? '—'
+}

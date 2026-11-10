@@ -39,12 +39,13 @@ func TestRunFreshAndIdempotent(t *testing.T) {
 	if res.From != "" {
 		t.Errorf("新库 From 应为空,得到 %q", res.From)
 	}
-	if res.To == "" || len(res.Applied) != 1 || res.Applied[0] != res.To {
-		t.Errorf("新库应只应用初始迁移,得到 %+v", res)
+	latest := mustLatestVersion(t)
+	if res.To != latest || len(res.Applied) == 0 || res.Applied[len(res.Applied)-1] != res.To {
+		t.Errorf("新库应按序应用全部迁移到最新版本 %s,得到 %+v", latest, res)
 	}
 
 	// 业务表全部创建
-	for _, table := range []string{"topics", "targets", "tasks", "settings", "secrets"} {
+	for _, table := range []string{"topics", "targets", "subscriptions", "settings", "secrets", "subscription_runs"} {
 		var n int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&n); err != nil {
 			t.Errorf("表 %s 未创建: %v", table, err)
@@ -55,8 +56,8 @@ func TestRunFreshAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(revs) != 1 || revs[0].Version != res.To {
-		t.Errorf("版本记录不符: %+v", revs)
+	if len(revs) != len(res.Applied) || revs[len(revs)-1].Version != res.To {
+		t.Errorf("版本记录不符: applied=%d revs=%d", len(res.Applied), len(revs))
 	}
 
 	// 重复执行:无待应用迁移

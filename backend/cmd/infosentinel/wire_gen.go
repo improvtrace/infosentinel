@@ -9,9 +9,8 @@ package main
 import (
 	"github.com/go-kratos/kratos/v2"
 	"github.com/tomasgdl/infosentinel/backend/internal/config"
-	"github.com/tomasgdl/infosentinel/backend/internal/logger"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data"
-	"github.com/tomasgdl/infosentinel/backend/internal/secret"
+	"github.com/tomasgdl/infosentinel/backend/pkg/logger"
 )
 
 // Injectors from wire.go:
@@ -32,7 +31,7 @@ func initApp(cfgPath string) (*kratos.App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	resolver := secret.New(dataData)
+	resolver := config.NewResolver(dataData)
 	loggerOptions := logger.NewOptions(bootstrap)
 	helper, cleanup2, err := logger.NewLogger(loggerOptions)
 	if err != nil {
@@ -69,7 +68,7 @@ func initCLI(cfgPath string) (*cliApp, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	resolver := secret.New(dataData)
+	resolver := config.NewResolver(dataData)
 	mainCliApp := newCLIApp(bootstrap, dataData, helper, resolver)
 	return mainCliApp, func() {
 		cleanup2()

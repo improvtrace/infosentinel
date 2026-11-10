@@ -11,8 +11,9 @@ var ErrNotFound = errors.New("not found")
 type Repository interface {
 	TopicRepository
 	TargetRepository
-	TaskRepository
+	SubscriptionRepository
 	SettingRepository
 	SecretRepository
 	ConfigRepository
+	RunRepository
 }

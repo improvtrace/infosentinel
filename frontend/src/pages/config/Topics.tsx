@@ -36,20 +36,20 @@ export default function Topics() {
   return (
     <div>
       <Callout msg={msg} err={err} />
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-slate-500 m-0">主题是一段 prompt,agent 按它采集并撰写报告;被任务引用的主题不可删除。</p>
-        <button className="btn btn-sm" onClick={() => setParams({ edit: 'new' })}>+ 新建</button>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12.5px] text-ghost m-0">主题是一段 prompt,agent 按它采集并撰写报告;已被订阅的主题不可删除。</p>
+        <button className="btn btn-sm shrink-0" onClick={() => setParams({ edit: 'new' })}>新建</button>
       </div>
       {items.length > 0 ? (
         <div className="card overflow-x-auto"><table className="tbl">
-          <thead><tr><th>名称</th><th>被引用</th><th>prompt 摘要</th><th>操作</th></tr></thead>
+          <thead><tr><th>名称</th><th>被引用</th><th>prompt 摘要</th><th className="text-right">操作</th></tr></thead>
           <tbody>
             {items.map((t) => (
               <tr key={t.name}>
-                <td><b>{t.name}</b></td>
-                <td>{t.used_by ?? 0} 个任务</td>
-                <td className="text-slate-500">{t.prompt.length > 50 ? t.prompt.slice(0, 50) + '…' : t.prompt}</td>
-                <td className="whitespace-nowrap">
+                <td className="font-medium">{t.name}</td>
+                <td className="text-dim">{t.used_by ?? 0} 个订阅</td>
+                <td className="text-[12.5px] text-ghost">{t.prompt.length > 50 ? t.prompt.slice(0, 50) + '…' : t.prompt}</td>
+                <td className="whitespace-nowrap text-right">
                   <button className="btn btn-ghost btn-sm" onClick={() => setParams({ edit: t.name })}>编辑</button>{' '}
                   <button className="btn btn-danger btn-sm" onClick={() => remove(t.name)}>删除</button>
                 </td>
@@ -57,7 +57,7 @@ export default function Topics() {
             ))}
           </tbody>
         </table></div>
-      ) : <Empty>还没有主题;新建一个,然后在任务里引用它</Empty>}
+      ) : <Empty>还没有主题;新建一个,然后在订阅管理里订阅它</Empty>}
     </div>
   )
 }
@@ -100,7 +100,7 @@ function TopicForm({ editing, onDone }: { editing: string; onDone: () => void })
     <div>
       <Callout err={err} />
       <form
-        className="form card p-5 max-w-3xl"
+        className="card max-w-3xl p-5"
         onSubmit={(e) => {
           e.preventDefault()
           save()
@@ -108,29 +108,29 @@ function TopicForm({ editing, onDone }: { editing: string; onDone: () => void })
       >
         {isNew ? (
           <>
-            <label className="label">名称(唯一标识,任务用它引用;保存后不可改)</label>
+            <label className="field-label">名称(唯一标识,订阅用它引用;保存后不可改)</label>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 ai-agent" />
           </>
         ) : (
           <>
-            <label className="label">名称</label>
+            <label className="field-label">名称</label>
             <span className="mono">{editing}</span>
           </>
         )}
-        <label className="label">Prompt(关注什么、如何取舍、报告怎么写)</label>
+        <label className="field-label">Prompt(关注什么、如何取舍、报告怎么写)</label>
         <textarea
-          className="input font-mono text-xs min-h-[240px] leading-relaxed"
+          className="input min-h-[240px] font-mono text-xs leading-relaxed"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={'关注 LLM 与 AI Agent 应用开发生态,重点:\n- 新框架、新模型的发布与重要版本更新\n报告用中文撰写,每条附一句话摘要与原文链接。'}
         />
-        <div className="flex items-center gap-3 mt-4 flex-wrap">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button className="btn" disabled={saving} type="submit">保存</button>
           <button className="btn btn-ghost" type="button" onClick={onDone}>取消</button>
-          <span className="text-xs text-slate-500">保存即校验并热生效;运行中的任务不受影响</span>
+          <span className="text-[12px] text-ghost">保存即校验并热生效;运行中的订阅不受影响</span>
         </div>
       </form>
-      <p className="mt-3"><Link className="text-blue-600 text-[13px]" to="/config/topics">← 返回主题列表</Link></p>
+      <p className="mt-4"><Link className="text-[13px] text-accent no-underline hover:underline" to="/config/topics">返回主题列表</Link></p>
     </div>
   )
 }

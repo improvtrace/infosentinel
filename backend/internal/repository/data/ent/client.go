@@ -16,8 +16,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/secret"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/setting"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscription"
+	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscriptionrun"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/target"
-	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/task"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/topic"
 )
 
@@ -30,10 +31,12 @@ type Client struct {
 	Secret *SecretClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// Subscription is the client for interacting with the Subscription builders.
+	Subscription *SubscriptionClient
+	// SubscriptionRun is the client for interacting with the SubscriptionRun builders.
+	SubscriptionRun *SubscriptionRunClient
 	// Target is the client for interacting with the Target builders.
 	Target *TargetClient
-	// Task is the client for interacting with the Task builders.
-	Task *TaskClient
 	// Topic is the client for interacting with the Topic builders.
 	Topic *TopicClient
 }
@@ -49,8 +52,9 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Secret = NewSecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
+	c.Subscription = NewSubscriptionClient(c.config)
+	c.SubscriptionRun = NewSubscriptionRunClient(c.config)
 	c.Target = NewTargetClient(c.config)
-	c.Task = NewTaskClient(c.config)
 	c.Topic = NewTopicClient(c.config)
 }
 
@@ -142,13 +146,14 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:     ctx,
-		config:  cfg,
-		Secret:  NewSecretClient(cfg),
-		Setting: NewSettingClient(cfg),
-		Target:  NewTargetClient(cfg),
-		Task:    NewTaskClient(cfg),
-		Topic:   NewTopicClient(cfg),
+		ctx:             ctx,
+		config:          cfg,
+		Secret:          NewSecretClient(cfg),
+		Setting:         NewSettingClient(cfg),
+		Subscription:    NewSubscriptionClient(cfg),
+		SubscriptionRun: NewSubscriptionRunClient(cfg),
+		Target:          NewTargetClient(cfg),
+		Topic:           NewTopicClient(cfg),
 	}, nil
 }
 
@@ -166,13 +171,14 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:     ctx,
-		config:  cfg,
-		Secret:  NewSecretClient(cfg),
-		Setting: NewSettingClient(cfg),
-		Target:  NewTargetClient(cfg),
-		Task:    NewTaskClient(cfg),
-		Topic:   NewTopicClient(cfg),
+		ctx:             ctx,
+		config:          cfg,
+		Secret:          NewSecretClient(cfg),
+		Setting:         NewSettingClient(cfg),
+		Subscription:    NewSubscriptionClient(cfg),
+		SubscriptionRun: NewSubscriptionRunClient(cfg),
+		Target:          NewTargetClient(cfg),
+		Topic:           NewTopicClient(cfg),
 	}, nil
 }
 
@@ -201,21 +207,21 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.Secret.Use(hooks...)
-	c.Setting.Use(hooks...)
-	c.Target.Use(hooks...)
-	c.Task.Use(hooks...)
-	c.Topic.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.Secret, c.Setting, c.Subscription, c.SubscriptionRun, c.Target, c.Topic,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.Secret.Intercept(interceptors...)
-	c.Setting.Intercept(interceptors...)
-	c.Target.Intercept(interceptors...)
-	c.Task.Intercept(interceptors...)
-	c.Topic.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.Secret, c.Setting, c.Subscription, c.SubscriptionRun, c.Target, c.Topic,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -225,10 +231,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Secret.mutate(ctx, m)
 	case *SettingMutation:
 		return c.Setting.mutate(ctx, m)
+	case *SubscriptionMutation:
+		return c.Subscription.mutate(ctx, m)
+	case *SubscriptionRunMutation:
+		return c.SubscriptionRun.mutate(ctx, m)
 	case *TargetMutation:
 		return c.Target.mutate(ctx, m)
-	case *TaskMutation:
-		return c.Task.mutate(ctx, m)
 	case *TopicMutation:
 		return c.Topic.mutate(ctx, m)
 	default:
@@ -502,6 +510,272 @@ func (c *SettingClient) mutate(ctx context.Context, m *SettingMutation) (Value, 
 	}
 }
 
+// SubscriptionClient is a client for the Subscription schema.
+type SubscriptionClient struct {
+	config
+}
+
+// NewSubscriptionClient returns a client for the Subscription from the given config.
+func NewSubscriptionClient(c config) *SubscriptionClient {
+	return &SubscriptionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscription.Hooks(f(g(h())))`.
+func (c *SubscriptionClient) Use(hooks ...Hook) {
+	c.hooks.Subscription = append(c.hooks.Subscription, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscription.Intercept(f(g(h())))`.
+func (c *SubscriptionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Subscription = append(c.inters.Subscription, interceptors...)
+}
+
+// Create returns a builder for creating a Subscription entity.
+func (c *SubscriptionClient) Create() *SubscriptionCreate {
+	mutation := newSubscriptionMutation(c.config, OpCreate)
+	return &SubscriptionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Subscription entities.
+func (c *SubscriptionClient) CreateBulk(builders ...*SubscriptionCreate) *SubscriptionCreateBulk {
+	return &SubscriptionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionClient) MapCreateBulk(slice any, setFunc func(*SubscriptionCreate, int)) *SubscriptionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionCreateBulk{err: fmt.Errorf("calling to SubscriptionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Subscription.
+func (c *SubscriptionClient) Update() *SubscriptionUpdate {
+	mutation := newSubscriptionMutation(c.config, OpUpdate)
+	return &SubscriptionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionClient) UpdateOne(_m *Subscription) *SubscriptionUpdateOne {
+	mutation := newSubscriptionMutation(c.config, OpUpdateOne, withSubscription(_m))
+	return &SubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionClient) UpdateOneID(id int) *SubscriptionUpdateOne {
+	mutation := newSubscriptionMutation(c.config, OpUpdateOne, withSubscriptionID(id))
+	return &SubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Subscription.
+func (c *SubscriptionClient) Delete() *SubscriptionDelete {
+	mutation := newSubscriptionMutation(c.config, OpDelete)
+	return &SubscriptionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionClient) DeleteOne(_m *Subscription) *SubscriptionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionClient) DeleteOneID(id int) *SubscriptionDeleteOne {
+	builder := c.Delete().Where(subscription.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionDeleteOne{builder}
+}
+
+// Query returns a query builder for Subscription.
+func (c *SubscriptionClient) Query() *SubscriptionQuery {
+	return &SubscriptionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscription},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Subscription entity by its id.
+func (c *SubscriptionClient) Get(ctx context.Context, id int) (*Subscription, error) {
+	return c.Query().Where(subscription.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionClient) GetX(ctx context.Context, id int) *Subscription {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionClient) Hooks() []Hook {
+	return c.hooks.Subscription
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionClient) Interceptors() []Interceptor {
+	return c.inters.Subscription
+}
+
+func (c *SubscriptionClient) mutate(ctx context.Context, m *SubscriptionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Subscription mutation op: %q", m.Op())
+	}
+}
+
+// SubscriptionRunClient is a client for the SubscriptionRun schema.
+type SubscriptionRunClient struct {
+	config
+}
+
+// NewSubscriptionRunClient returns a client for the SubscriptionRun from the given config.
+func NewSubscriptionRunClient(c config) *SubscriptionRunClient {
+	return &SubscriptionRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionrun.Hooks(f(g(h())))`.
+func (c *SubscriptionRunClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionRun = append(c.hooks.SubscriptionRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionrun.Intercept(f(g(h())))`.
+func (c *SubscriptionRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionRun = append(c.inters.SubscriptionRun, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionRun entity.
+func (c *SubscriptionRunClient) Create() *SubscriptionRunCreate {
+	mutation := newSubscriptionRunMutation(c.config, OpCreate)
+	return &SubscriptionRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionRun entities.
+func (c *SubscriptionRunClient) CreateBulk(builders ...*SubscriptionRunCreate) *SubscriptionRunCreateBulk {
+	return &SubscriptionRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionRunClient) MapCreateBulk(slice any, setFunc func(*SubscriptionRunCreate, int)) *SubscriptionRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionRunCreateBulk{err: fmt.Errorf("calling to SubscriptionRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionRun.
+func (c *SubscriptionRunClient) Update() *SubscriptionRunUpdate {
+	mutation := newSubscriptionRunMutation(c.config, OpUpdate)
+	return &SubscriptionRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionRunClient) UpdateOne(_m *SubscriptionRun) *SubscriptionRunUpdateOne {
+	mutation := newSubscriptionRunMutation(c.config, OpUpdateOne, withSubscriptionRun(_m))
+	return &SubscriptionRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionRunClient) UpdateOneID(id int) *SubscriptionRunUpdateOne {
+	mutation := newSubscriptionRunMutation(c.config, OpUpdateOne, withSubscriptionRunID(id))
+	return &SubscriptionRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionRun.
+func (c *SubscriptionRunClient) Delete() *SubscriptionRunDelete {
+	mutation := newSubscriptionRunMutation(c.config, OpDelete)
+	return &SubscriptionRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionRunClient) DeleteOne(_m *SubscriptionRun) *SubscriptionRunDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionRunClient) DeleteOneID(id int) *SubscriptionRunDeleteOne {
+	builder := c.Delete().Where(subscriptionrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionRunDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionRun.
+func (c *SubscriptionRunClient) Query() *SubscriptionRunQuery {
+	return &SubscriptionRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionRun entity by its id.
+func (c *SubscriptionRunClient) Get(ctx context.Context, id int) (*SubscriptionRun, error) {
+	return c.Query().Where(subscriptionrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionRunClient) GetX(ctx context.Context, id int) *SubscriptionRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionRunClient) Hooks() []Hook {
+	return c.hooks.SubscriptionRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionRunClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionRun
+}
+
+func (c *SubscriptionRunClient) mutate(ctx context.Context, m *SubscriptionRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionRun mutation op: %q", m.Op())
+	}
+}
+
 // TargetClient is a client for the Target schema.
 type TargetClient struct {
 	config
@@ -632,139 +906,6 @@ func (c *TargetClient) mutate(ctx context.Context, m *TargetMutation) (Value, er
 		return (&TargetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Target mutation op: %q", m.Op())
-	}
-}
-
-// TaskClient is a client for the Task schema.
-type TaskClient struct {
-	config
-}
-
-// NewTaskClient returns a client for the Task from the given config.
-func NewTaskClient(c config) *TaskClient {
-	return &TaskClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `task.Hooks(f(g(h())))`.
-func (c *TaskClient) Use(hooks ...Hook) {
-	c.hooks.Task = append(c.hooks.Task, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `task.Intercept(f(g(h())))`.
-func (c *TaskClient) Intercept(interceptors ...Interceptor) {
-	c.inters.Task = append(c.inters.Task, interceptors...)
-}
-
-// Create returns a builder for creating a Task entity.
-func (c *TaskClient) Create() *TaskCreate {
-	mutation := newTaskMutation(c.config, OpCreate)
-	return &TaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of Task entities.
-func (c *TaskClient) CreateBulk(builders ...*TaskCreate) *TaskCreateBulk {
-	return &TaskCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *TaskClient) MapCreateBulk(slice any, setFunc func(*TaskCreate, int)) *TaskCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &TaskCreateBulk{err: fmt.Errorf("calling to TaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*TaskCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &TaskCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for Task.
-func (c *TaskClient) Update() *TaskUpdate {
-	mutation := newTaskMutation(c.config, OpUpdate)
-	return &TaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *TaskClient) UpdateOne(_m *Task) *TaskUpdateOne {
-	mutation := newTaskMutation(c.config, OpUpdateOne, withTask(_m))
-	return &TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *TaskClient) UpdateOneID(id int) *TaskUpdateOne {
-	mutation := newTaskMutation(c.config, OpUpdateOne, withTaskID(id))
-	return &TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for Task.
-func (c *TaskClient) Delete() *TaskDelete {
-	mutation := newTaskMutation(c.config, OpDelete)
-	return &TaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *TaskClient) DeleteOne(_m *Task) *TaskDeleteOne {
-	return c.DeleteOneID(_m.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *TaskClient) DeleteOneID(id int) *TaskDeleteOne {
-	builder := c.Delete().Where(task.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &TaskDeleteOne{builder}
-}
-
-// Query returns a query builder for Task.
-func (c *TaskClient) Query() *TaskQuery {
-	return &TaskQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeTask},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a Task entity by its id.
-func (c *TaskClient) Get(ctx context.Context, id int) (*Task, error) {
-	return c.Query().Where(task.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *TaskClient) GetX(ctx context.Context, id int) *Task {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// Hooks returns the client hooks.
-func (c *TaskClient) Hooks() []Hook {
-	return c.hooks.Task
-}
-
-// Interceptors returns the client interceptors.
-func (c *TaskClient) Interceptors() []Interceptor {
-	return c.inters.Task
-}
-
-func (c *TaskClient) mutate(ctx context.Context, m *TaskMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&TaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&TaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&TaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown Task mutation op: %q", m.Op())
 	}
 }
 
@@ -904,9 +1045,9 @@ func (c *TopicClient) mutate(ctx context.Context, m *TopicMutation) (Value, erro
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Secret, Setting, Target, Task, Topic []ent.Hook
+		Secret, Setting, Subscription, SubscriptionRun, Target, Topic []ent.Hook
 	}
 	inters struct {
-		Secret, Setting, Target, Task, Topic []ent.Interceptor
+		Secret, Setting, Subscription, SubscriptionRun, Target, Topic []ent.Interceptor
 	}
 )
