@@ -6,7 +6,7 @@ import (
 	"entgo.io/ent/schema/field"
 )
 
-// Setting 全局设置段:key ∈ {sources, llm, mailer, server},value 为该段 JSON。
+// Setting 全局设置段:key ∈ {llm, mailer, server, storage},value 为该段 JSON。
 type Setting struct {
 	ent.Schema
 }

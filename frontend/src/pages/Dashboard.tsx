@@ -21,10 +21,10 @@ export default function Dashboard() {
     return () => clearInterval(t)
   }, [load, ov?.running])
 
-  const runTask = async (topic: string) => {
+  const runTask = async (name: string) => {
     try {
-      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(topic)}/run`)
-      toast.ok(`已触发订阅 ${topic},后台执行中`)
+      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(name)}/run`)
+      toast.ok(`已触发订阅 ${name},后台执行中`)
       setTimeout(load, 1200)
     } catch (e) {
       toast.err(errMsg(e))
@@ -79,8 +79,8 @@ export default function Dashboard() {
                 {ov.nexts.map((n, i) => (
                   <tr key={i}>
                     <td>
-                      <Link className="font-medium text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(n.topic)}`}>
-                        {n.topic}
+                      <Link className="font-medium text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(n.subscription)}`}>
+                        {n.subscription}
                       </Link>
                     </td>
                     <td>
@@ -88,7 +88,7 @@ export default function Dashboard() {
                     </td>
                     <td className="text-dim">{ftime(n.next)}</td>
                     <td className="text-right">
-                      <button className="btn btn-ghost btn-sm" onClick={() => runTask(n.topic)}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => runTask(n.subscription)}>
                         <IconPlay width={12} height={12} /> 运行
                       </button>
                     </td>
@@ -157,8 +157,8 @@ export default function Dashboard() {
                   <tr key={r.id}>
                     <td className="font-mono text-[12px] text-ghost">{r.id}</td>
                     <td>
-                      <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(r.topic)}`}>
-                        {r.topic}
+                      <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(r.subscription)}`}>
+                        {r.subscription}
                       </Link>
                     </td>
                     <td className="text-[12px] text-ghost">{triggerLabel(r.trigger)}</td>

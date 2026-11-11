@@ -3,12 +3,13 @@ package data
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 )
 
-// newTestData 创建临时 SQLite 数据层。
+// newTestData 创建临时 SQLite 数据层(New 会执行迁移,写入内置默认配置)。
 func newTestData(t *testing.T) *Data {
 	t.Helper()
 	d, err := New(Options{DBPath: filepath.Join(t.TempDir(), "test.db")})
@@ -19,81 +20,63 @@ func newTestData(t *testing.T) *Data {
 	return d
 }
 
-func seedConfig() *repository.Config {
-	cfg := &repository.Config{
-		Sources: repository.Sources{Search: repository.SearchConfig{Enabled: true}},
-		Topics:  []repository.Topic{{Name: "tp1", Prompt: "关注 AI"}},
-		Targets: []repository.Target{{Name: "m1", Type: "email", To: "a@b.c", SubjectPrefix: "[InfoSentinel]"}},
-		Subscriptions: []repository.Subscription{{
-			Topic: "tp1", Cron: "0 8 * * *", Targets: []string{"m1"},
-		}},
-		LLM:     repository.LLMConfig{BaseURL: "https://api.deepseek.com", Model: "deepseek-chat", Temperature: 0.3, TimeoutSec: 300, MaxStep: 25},
-		Mailer:  repository.MailerConfig{Type: repository.MailerTypeInbox},
-		Storage: repository.StorageConfig{Type: repository.StorageTypeLocal, Path: "output", PeriodDays: 1, MaxDirs: 30},
+// seedFixture 在内置数据之外直插测试用的业务行(tp1 主题 / m1 目标 / 订阅A)。
+func seedFixture(t *testing.T, d *Data) {
+	t.Helper()
+	ctx := context.Background()
+	if err := d.client.Topic.Create().SetName("tp1").SetPrompt("关注 AI").Exec(ctx); err != nil {
+		t.Fatalf("插入测试主题: %v", err)
 	}
-	if err := cfg.Finalize(); err != nil {
-		panic(err)
+	if err := d.client.Target.Create().SetName("m1").SetType("email").SetTo("a@b.c").SetSubjectPrefix("[IS]").Exec(ctx); err != nil {
+		t.Fatalf("插入测试目标: %v", err)
 	}
-	return cfg
+	if err := d.client.Subscription.Create().
+		SetName("订阅A").SetTopics([]string{"tp1"}).SetSynthesis(repository.DefaultSynthesis).
+		SetCron("0 8 * * *").SetTargets([]string{"m1"}).SetSpace(repository.DefaultSpaceName).
+		Exec(ctx); err != nil {
+		t.Fatalf("插入测试订阅: %v", err)
+	}
 }
 
-func TestMigrateAndSeedRoundTrip(t *testing.T) {
+// builtinTopicNames 是 init 迁移内置的主题名(与迁移 SQL 保持一致)。
+var builtinTopicNames = []string{"world-situation", "ai-development", "security", "policy"}
+
+// TestMigrateWritesBuiltinData 验证 init 迁移写入内置默认配置:
+// LoadConfig(含 Finalize 完整校验)成功即证明主题/订阅/推送目标/全局设置齐备且合法。
+func TestMigrateWritesBuiltinData(t *testing.T) {
 	d := newTestData(t)
-	ctx := context.Background()
 
-	// New 对空库自动写入 migrate 内置默认配置
-	if !d.Seeded() {
-		t.Fatal("空库应自动写入内置默认配置")
-	}
-	if empty, err := d.IsEmpty(ctx); err != nil || empty {
-		t.Fatalf("内置种子导入后不应为空: empty=%v err=%v", empty, err)
-	}
-	builtin, err := d.LoadConfig(ctx)
+	cfg, err := d.LoadConfig(context.Background())
 	if err != nil {
-		t.Fatalf("加载内置种子: %v", err)
+		t.Fatalf("加载内置默认配置: %v", err)
 	}
-	if len(builtin.Topics) != 1 || builtin.Topics[0].Name != "ai-agent" ||
-		builtin.Storage.Type != repository.StorageTypeLocal || builtin.Mailer.Type != repository.MailerTypeInbox {
-		t.Errorf("内置种子内容不符: %+v", builtin)
+	for _, name := range builtinTopicNames {
+		if cfg.TopicByName(name) == nil {
+			t.Errorf("内置主题 %s 缺失", name)
+		}
 	}
-
-	// 整体替换种子与回读
-	seed := seedConfig()
-	if err := d.SeedFromConfig(ctx, seed); err != nil {
-		t.Fatalf("SeedFromConfig: %v", err)
+	sub := cfg.SubscriptionByName("情报日报")
+	if sub == nil {
+		t.Fatal("内置订阅 情报日报 缺失")
 	}
-	if empty, _ := d.IsEmpty(ctx); empty {
-		t.Fatal("种子导入后不应为空")
+	if !slices.Equal(sub.Topics, builtinTopicNames) {
+		t.Errorf("内置订阅 topics = %v,期望 %v", sub.Topics, builtinTopicNames)
 	}
-	// 重复导入(整体替换)应幂等
-	if err := d.SeedFromConfig(ctx, seed); err != nil {
-		t.Fatalf("重复导入: %v", err)
+	if len(sub.Targets) != 1 || sub.Targets[0] != "mailbox" || sub.Space != repository.DefaultSpaceName {
+		t.Errorf("内置订阅 targets/space 不符: %+v", sub)
 	}
-
-	got, err := d.LoadConfig(ctx)
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
+	if cfg.TargetByName("mailbox") == nil {
+		t.Error("内置推送目标 mailbox 缺失")
 	}
-	if got.LLM.Model != "deepseek-chat" || got.Storage.Path != "output" {
-		t.Errorf("settings 回读不符: %+v", got)
-	}
-	if len(got.Topics) != 1 || got.Topics[0].Prompt != "关注 AI" {
-		t.Errorf("topics 回读不符: %+v", got.Topics)
-	}
-	if len(got.Subscriptions) != 1 || got.Subscriptions[0].Cron != "0 8 * * *" {
-		t.Errorf("subscriptions 回读不符: %+v", got.Subscriptions)
-	}
-	if !got.Sources.Search.Enabled {
-		t.Errorf("sources 回读不符: %+v", got.Sources)
+	if cfg.LLM.BaseURL == "" || cfg.Mailer.Type != repository.MailerTypeInbox || len(cfg.Storage.Spaces) != 1 {
+		t.Errorf("全局设置不符: llm=%+v mailer=%+v storage=%+v", cfg.LLM, cfg.Mailer, cfg.Storage)
 	}
 }
 
 func TestCRUDAndReferentialIntegrity(t *testing.T) {
 	d := newTestData(t)
 	ctx := context.Background()
-	if err := d.SeedFromConfig(ctx, seedConfig()); err != nil {
-		t.Fatal(err)
-	}
+	seedFixture(t, d)
 
 	// 更新主题
 	if err := d.UpsertTopic(ctx, repository.Topic{Name: "tp1", Prompt: "改过的 prompt"}); err != nil {
@@ -128,6 +111,25 @@ func TestCRUDAndReferentialIntegrity(t *testing.T) {
 	// 删除不存在
 	if err := d.DeleteSubscription(ctx, "ghost"); err == nil {
 		t.Fatal("删除不存在订阅应报错")
+	}
+	// 按名称 upsert 订阅:同名词外的字段全部更新,不影响内置订阅
+	sub := repository.Subscription{
+		Name: "订阅A", Topics: []string{"tp1"}, Synthesis: repository.DefaultSynthesis,
+		Cron: "30 20 * * 1-5", Targets: []string{"m1"}, Space: "",
+	}
+	if err := d.UpsertSubscription(ctx, sub); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+	got, err := d.LoadConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := got.SubscriptionByName("订阅A")
+	if updated == nil || updated.Cron != "30 20 * * 1-5" || updated.Space != "" {
+		t.Errorf("按名称 upsert 未生效: %+v", updated)
+	}
+	if got.SubscriptionByName("情报日报") == nil {
+		t.Error("内置订阅不应受测试写入影响")
 	}
 }
 

@@ -17,7 +17,7 @@ type SubscriptionRun struct {
 
 func (SubscriptionRun) Fields() []ent.Field {
 	return []ent.Field{
-		field.String("topic").NotEmpty().MaxLen(64),
+		field.String("subscription").NotEmpty().MaxLen(64),
 		field.String("trigger").NotEmpty().MaxLen(16),
 		field.String("status").NotEmpty().MaxLen(16),
 		field.Time("started_at"),
@@ -26,13 +26,15 @@ func (SubscriptionRun) Fields() []ent.Field {
 		field.Text("error").Default(""),
 		field.Text("subject").Default(""),
 		field.Text("body").Default(""),
+		// Artifacts 是本次运行的产物路径列表(DSN 格式:类型://空间名/分桶/文件名)。
+		field.JSON("artifacts", []string{}).Optional(),
 	}
 }
 
 // Indexes 运行记录是只追加的日志型数据,按订阅过滤、按时间倒序查询,建索引加速。
 func (SubscriptionRun) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("topic", "started_at"),
+		index.Fields("subscription", "started_at"),
 		index.Fields("started_at"),
 	}
 }

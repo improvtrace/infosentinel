@@ -15,12 +15,20 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-
-	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 )
 
 // hackerNewsAPI 是 HN Firebase API 根地址。var 以便测试注入 mock 服务。
 var hackerNewsAPI = "https://hacker-news.firebaseio.com/v0"
+
+// HN 工具内置参数(无全局配置):min_points/top_n 由 LLM 按主题指令传入。
+const (
+	// hnDefaultTopN 是默认返回的热榜条数。
+	hnDefaultTopN = 15
+	// hnMaxTopN 是单次返回条数上限,控制上下文长度。
+	hnMaxTopN = 30
+	// hnDefaultMinPoints 是默认最低分阈值。
+	hnDefaultMinPoints = 50
+)
 
 // hnItem 是返回给 LLM 的单条 HN 热榜条目。
 type hnItem struct {
@@ -44,52 +52,66 @@ type hnStory struct {
 	Descendants int    `json:"descendants"`
 }
 
+// hnToolParams 是 fetch_hackernews 工具的参数。
+type hnToolParams struct {
+	// MinPoints 是最低分阈值,过滤低热度条目;留空用默认值
+	MinPoints int `json:"min_points,omitempty" jsonschema_description:"minimum score threshold; omit for default (50)"`
+	// TopN 是返回条数上限;留空用默认值
+	TopN int `json:"top_n,omitempty" jsonschema_description:"max stories to return; omit for default (15)"`
+}
+
 // hnTool 持有 fetch_hackernews 工具的依赖。
 type hnTool struct {
-	client    *http.Client
-	topN      int
-	minPoints int
-	window    time.Duration
-	store     *SeenStore
-	nowFn     func() time.Time
+	client *http.Client
+	window time.Duration
+	store  *SeenStore
+	nowFn  func() time.Time
 }
 
 // NewHackerNewsTool 创建 fetch_hackernews 工具:拉取 Hacker News 首页热榜。
-func NewHackerNewsTool(cfg *repository.HackerNewsConfig, collect *repository.CollectConfig, store *SeenStore) (tool.InvokableTool, error) {
+func NewHackerNewsTool(store *SeenStore) (tool.InvokableTool, error) {
 	t := &hnTool{
-		client:    &http.Client{Timeout: time.Duration(collect.HTTPTimeoutSec) * time.Second},
-		topN:      cfg.TopN,
-		minPoints: cfg.MinPoints,
-		window:    time.Duration(collect.WindowHours) * time.Hour,
-		store:     store,
-		nowFn:     time.Now,
+		client: &http.Client{Timeout: HTTPTimeoutSec * time.Second},
+		window: WindowHours * time.Hour,
+		store:  store,
+		nowFn:  time.Now,
 	}
 	return utils.InferTool(
 		"fetch_hackernews",
 		"Fetch current Hacker News front-page stories (top stories with score and comment count). "+
-			"Useful for tech news, launches and discussions.",
+			"Useful for tech news, launches and discussions. "+
+			"Pass min_points to filter low-score stories, top_n to limit the result count.",
 		t.invoke,
 	)
 }
 
 // invoke 执行 HN 拉取。
-func (t *hnTool) invoke(ctx context.Context, _ struct{}) (string, error) {
+func (t *hnTool) invoke(ctx context.Context, params *hnToolParams) (string, error) {
 	now := t.nowFn()
 
-	ids := make([]int, 0, t.topN*2)
+	topN := hnDefaultTopN
+	if params.TopN > 0 {
+		topN = min(params.TopN, hnMaxTopN)
+	}
+	minPoints := hnDefaultMinPoints
+	if params.MinPoints > 0 {
+		minPoints = params.MinPoints
+	}
+
+	ids := make([]int, 0, topN*2)
 	if err := t.getJSON(ctx, hackerNewsAPI+"/topstories.json", &ids); err != nil {
 		return friendlyResult(map[string]any{"error": fmt.Sprintf("fetch topstories failed: %v", err)}), nil
 	}
-	if len(ids) > t.topN*3 {
-		ids = ids[:t.topN*3] // 多取一些以留出分数/去重过滤余量
+	if len(ids) > topN*3 {
+		ids = ids[:topN*3] // 多取一些以留出分数/去重过滤余量
 	}
 
-	stories := fetchStories(ctx, t.client, ids, t.topN*3)
+	stories := fetchStories(ctx, t.client, ids, topN*3)
 
-	items := make([]hnItem, 0, t.topN)
-	links := make([]string, 0, t.topN)
+	items := make([]hnItem, 0, topN)
+	links := make([]string, 0, topN)
 	for _, s := range stories {
-		if s.Score < t.minPoints {
+		if s.Score < minPoints {
 			continue
 		}
 		link := s.URL
@@ -113,7 +135,7 @@ func (t *hnTool) invoke(ctx context.Context, _ struct{}) (string, error) {
 			By:          s.By,
 			PublishedAt: pub.Format(time.RFC3339),
 		})
-		if len(items) >= t.topN {
+		if len(items) >= topN {
 			break
 		}
 	}
@@ -206,29 +228,28 @@ type repoItem struct {
 	URL         string `json:"url"`
 }
 
+// trendingTopN 是单次返回的 trending 仓库数上限(无全局配置)。
+const trendingTopN = 10
+
 // trendingToolParams 是 fetch_github_trending 工具的参数。
 type trendingToolParams struct {
-	// Language 是编程语言筛选;留空使用配置默认值;all 表示不过滤
-	Language string `json:"language,omitempty" jsonschema_description:"programming language filter, e.g. go, python; omit for default; 'all' for no filter"`
+	// Language 是编程语言筛选;留空不过滤;all 表示不过滤
+	Language string `json:"language,omitempty" jsonschema_description:"programming language filter, e.g. go, python; omit or 'all' for no filter"`
 }
 
 // trendingTool 持有 fetch_github_trending 工具的依赖。
 type trendingTool struct {
 	client  *http.Client
 	baseURL string // 可注入,便于测试
-	defLang string
-	topN    int
 	store   *SeenStore
 	nowFn   func() time.Time
 }
 
 // NewGitHubTrendingTool 创建 fetch_github_trending 工具:抓取 GitHub Trending 页面。
-func NewGitHubTrendingTool(cfg *repository.GitHubTrendingConfig, collect *repository.CollectConfig, store *SeenStore) (tool.InvokableTool, error) {
+func NewGitHubTrendingTool(store *SeenStore) (tool.InvokableTool, error) {
 	t := &trendingTool{
-		client:  &http.Client{Timeout: time.Duration(collect.HTTPTimeoutSec) * time.Second},
+		client:  &http.Client{Timeout: HTTPTimeoutSec * time.Second},
 		baseURL: "https://github.com/trending",
-		defLang: cfg.Language,
-		topN:    cfg.TopN,
 		store:   store,
 		nowFn:   time.Now,
 	}
@@ -242,10 +263,7 @@ func NewGitHubTrendingTool(cfg *repository.GitHubTrendingConfig, collect *reposi
 
 // invoke 抓取并解析 GitHub Trending。
 func (t *trendingTool) invoke(ctx context.Context, params *trendingToolParams) (string, error) {
-	lang := t.defLang
-	if params.Language != "" {
-		lang = params.Language
-	}
+	lang := params.Language
 
 	u := t.baseURL + "?since=daily"
 	if lang != "" && !strings.EqualFold(lang, "all") {
@@ -272,10 +290,10 @@ func (t *trendingTool) invoke(ctx context.Context, params *trendingToolParams) (
 	}
 
 	now := t.nowFn()
-	items := make([]repoItem, 0, t.topN)
-	links := make([]string, 0, t.topN)
+	items := make([]repoItem, 0, trendingTopN)
+	links := make([]string, 0, trendingTopN)
 	doc.Find("article.Box").Each(func(_ int, art *goquery.Selection) {
-		if len(items) >= t.topN {
+		if len(items) >= trendingTopN {
 			return
 		}
 		href, ok := art.Find("h2 a").Attr("href")

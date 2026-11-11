@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/predicate"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscriptionrun"
@@ -28,16 +29,16 @@ func (_u *SubscriptionRunUpdate) Where(ps ...predicate.SubscriptionRun) *Subscri
 	return _u
 }
 
-// SetTopic sets the "topic" field.
-func (_u *SubscriptionRunUpdate) SetTopic(v string) *SubscriptionRunUpdate {
-	_u.mutation.SetTopic(v)
+// SetSubscription sets the "subscription" field.
+func (_u *SubscriptionRunUpdate) SetSubscription(v string) *SubscriptionRunUpdate {
+	_u.mutation.SetSubscription(v)
 	return _u
 }
 
-// SetNillableTopic sets the "topic" field if the given value is not nil.
-func (_u *SubscriptionRunUpdate) SetNillableTopic(v *string) *SubscriptionRunUpdate {
+// SetNillableSubscription sets the "subscription" field if the given value is not nil.
+func (_u *SubscriptionRunUpdate) SetNillableSubscription(v *string) *SubscriptionRunUpdate {
 	if v != nil {
-		_u.SetTopic(*v)
+		_u.SetSubscription(*v)
 	}
 	return _u
 }
@@ -167,6 +168,24 @@ func (_u *SubscriptionRunUpdate) SetNillableBody(v *string) *SubscriptionRunUpda
 	return _u
 }
 
+// SetArtifacts sets the "artifacts" field.
+func (_u *SubscriptionRunUpdate) SetArtifacts(v []string) *SubscriptionRunUpdate {
+	_u.mutation.SetArtifacts(v)
+	return _u
+}
+
+// AppendArtifacts appends value to the "artifacts" field.
+func (_u *SubscriptionRunUpdate) AppendArtifacts(v []string) *SubscriptionRunUpdate {
+	_u.mutation.AppendArtifacts(v)
+	return _u
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (_u *SubscriptionRunUpdate) ClearArtifacts() *SubscriptionRunUpdate {
+	_u.mutation.ClearArtifacts()
+	return _u
+}
+
 // Mutation returns the SubscriptionRunMutation object of the builder.
 func (_u *SubscriptionRunUpdate) Mutation() *SubscriptionRunMutation {
 	return _u.mutation
@@ -201,9 +220,9 @@ func (_u *SubscriptionRunUpdate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionRunUpdate) check() error {
-	if v, ok := _u.mutation.Topic(); ok {
-		if err := subscriptionrun.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.topic": %w`, err)}
+	if v, ok := _u.mutation.Subscription(); ok {
+		if err := subscriptionrun.SubscriptionValidator(v); err != nil {
+			return &ValidationError{Name: "subscription", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.subscription": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Trigger(); ok {
@@ -231,8 +250,8 @@ func (_u *SubscriptionRunUpdate) sqlSave(ctx context.Context) (_node int, err er
 			}
 		}
 	}
-	if value, ok := _u.mutation.Topic(); ok {
-		_spec.SetField(subscriptionrun.FieldTopic, field.TypeString, value)
+	if value, ok := _u.mutation.Subscription(); ok {
+		_spec.SetField(subscriptionrun.FieldSubscription, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Trigger(); ok {
 		_spec.SetField(subscriptionrun.FieldTrigger, field.TypeString, value)
@@ -264,6 +283,17 @@ func (_u *SubscriptionRunUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.Body(); ok {
 		_spec.SetField(subscriptionrun.FieldBody, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Artifacts(); ok {
+		_spec.SetField(subscriptionrun.FieldArtifacts, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifacts(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscriptionrun.FieldArtifacts, value)
+		})
+	}
+	if _u.mutation.ArtifactsCleared() {
+		_spec.ClearField(subscriptionrun.FieldArtifacts, field.TypeJSON)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{subscriptionrun.Label}
@@ -284,16 +314,16 @@ type SubscriptionRunUpdateOne struct {
 	mutation *SubscriptionRunMutation
 }
 
-// SetTopic sets the "topic" field.
-func (_u *SubscriptionRunUpdateOne) SetTopic(v string) *SubscriptionRunUpdateOne {
-	_u.mutation.SetTopic(v)
+// SetSubscription sets the "subscription" field.
+func (_u *SubscriptionRunUpdateOne) SetSubscription(v string) *SubscriptionRunUpdateOne {
+	_u.mutation.SetSubscription(v)
 	return _u
 }
 
-// SetNillableTopic sets the "topic" field if the given value is not nil.
-func (_u *SubscriptionRunUpdateOne) SetNillableTopic(v *string) *SubscriptionRunUpdateOne {
+// SetNillableSubscription sets the "subscription" field if the given value is not nil.
+func (_u *SubscriptionRunUpdateOne) SetNillableSubscription(v *string) *SubscriptionRunUpdateOne {
 	if v != nil {
-		_u.SetTopic(*v)
+		_u.SetSubscription(*v)
 	}
 	return _u
 }
@@ -423,6 +453,24 @@ func (_u *SubscriptionRunUpdateOne) SetNillableBody(v *string) *SubscriptionRunU
 	return _u
 }
 
+// SetArtifacts sets the "artifacts" field.
+func (_u *SubscriptionRunUpdateOne) SetArtifacts(v []string) *SubscriptionRunUpdateOne {
+	_u.mutation.SetArtifacts(v)
+	return _u
+}
+
+// AppendArtifacts appends value to the "artifacts" field.
+func (_u *SubscriptionRunUpdateOne) AppendArtifacts(v []string) *SubscriptionRunUpdateOne {
+	_u.mutation.AppendArtifacts(v)
+	return _u
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (_u *SubscriptionRunUpdateOne) ClearArtifacts() *SubscriptionRunUpdateOne {
+	_u.mutation.ClearArtifacts()
+	return _u
+}
+
 // Mutation returns the SubscriptionRunMutation object of the builder.
 func (_u *SubscriptionRunUpdateOne) Mutation() *SubscriptionRunMutation {
 	return _u.mutation
@@ -470,9 +518,9 @@ func (_u *SubscriptionRunUpdateOne) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionRunUpdateOne) check() error {
-	if v, ok := _u.mutation.Topic(); ok {
-		if err := subscriptionrun.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.topic": %w`, err)}
+	if v, ok := _u.mutation.Subscription(); ok {
+		if err := subscriptionrun.SubscriptionValidator(v); err != nil {
+			return &ValidationError{Name: "subscription", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.subscription": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Trigger(); ok {
@@ -517,8 +565,8 @@ func (_u *SubscriptionRunUpdateOne) sqlSave(ctx context.Context) (_node *Subscri
 			}
 		}
 	}
-	if value, ok := _u.mutation.Topic(); ok {
-		_spec.SetField(subscriptionrun.FieldTopic, field.TypeString, value)
+	if value, ok := _u.mutation.Subscription(); ok {
+		_spec.SetField(subscriptionrun.FieldSubscription, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Trigger(); ok {
 		_spec.SetField(subscriptionrun.FieldTrigger, field.TypeString, value)
@@ -549,6 +597,17 @@ func (_u *SubscriptionRunUpdateOne) sqlSave(ctx context.Context) (_node *Subscri
 	}
 	if value, ok := _u.mutation.Body(); ok {
 		_spec.SetField(subscriptionrun.FieldBody, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Artifacts(); ok {
+		_spec.SetField(subscriptionrun.FieldArtifacts, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedArtifacts(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscriptionrun.FieldArtifacts, value)
+		})
+	}
+	if _u.mutation.ArtifactsCleared() {
+		_spec.ClearField(subscriptionrun.FieldArtifacts, field.TypeJSON)
 	}
 	_node = &SubscriptionRun{config: _u.config}
 	_spec.Assign = _node.assignValues

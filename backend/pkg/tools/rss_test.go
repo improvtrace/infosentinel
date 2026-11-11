@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 )
 
 // rssFixture 返回一份含新/旧两条目与 HTML 描述的 RSS。
@@ -34,17 +32,16 @@ func rssFixture(now time.Time) string {
 </channel></rss>`, fresh, stale)
 }
 
-func newRSSToolForTest(t *testing.T, feedURL string) *rssTool {
+func newRSSToolForTest(t *testing.T) *rssTool {
 	t.Helper()
-	store, err := NewSeenStore("", 7)
+	store, err := NewSeenStore("", DedupDays)
 	if err != nil {
 		t.Fatalf("NewSeenStore: %v", err)
 	}
 	return &rssTool{
-		feeds:    []repository.RSSFeed{{Name: "测试源", URL: feedURL}},
 		client:   &http.Client{Timeout: 5 * time.Second},
-		window:   48 * time.Hour,
-		maxItems: 15,
+		window:   WindowHours * time.Hour,
+		maxItems: MaxItemsPerSource,
 		store:    store,
 		nowFn:    time.Now,
 	}
@@ -56,9 +53,9 @@ func TestRSSInvoke(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tool := newRSSToolForTest(t, srv.URL)
+	tool := newRSSToolForTest(t)
 
-	out, err := tool.invoke(context.Background(), &rssToolParams{})
+	out, err := tool.invoke(context.Background(), &rssToolParams{URL: srv.URL})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -81,9 +78,12 @@ func TestRSSInvoke(t *testing.T) {
 	if it.Published == "" {
 		t.Error("Published 不应为空")
 	}
+	if it.Feed != "Test Feed" {
+		t.Errorf("Feed 应取源自述标题,得到 %q", it.Feed)
+	}
 
 	// 第二次调用:去重后应为空,并带 note 说明
-	out2, err := tool.invoke(context.Background(), &rssToolParams{})
+	out2, err := tool.invoke(context.Background(), &rssToolParams{URL: srv.URL})
 	if err != nil {
 		t.Fatalf("invoke(第二次): %v", err)
 	}
@@ -92,29 +92,29 @@ func TestRSSInvoke(t *testing.T) {
 	}
 }
 
-func TestRSSUnknownFeed(t *testing.T) {
-	tool := newRSSToolForTest(t, "http://127.0.0.1:1/feed")
-	out, err := tool.invoke(context.Background(), &rssToolParams{Feed: "不存在的源"})
+func TestRSSEmptyURL(t *testing.T) {
+	tool := newRSSToolForTest(t)
+	out, err := tool.invoke(context.Background(), &rssToolParams{})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
-	if !strings.Contains(out, "not found") {
-		t.Errorf("未知源应返回错误说明,得到 %s", out)
+	if !strings.Contains(out, "must not be empty") {
+		t.Errorf("空 URL 应返回错误说明,得到 %s", out)
 	}
 }
 
-func TestRSSFeedError(t *testing.T) {
+func TestRSSFetchError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
-	tool := newRSSToolForTest(t, srv.URL)
-	out, err := tool.invoke(context.Background(), &rssToolParams{})
+	tool := newRSSToolForTest(t)
+	out, err := tool.invoke(context.Background(), &rssToolParams{URL: srv.URL})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
-	if !strings.Contains(out, "feed error") {
-		t.Errorf("源失败应以 feed error 形式回传,得到 %s", out)
+	if !strings.Contains(out, "failed") {
+		t.Errorf("源失败应以 error 形式回传,得到 %s", out)
 	}
 }

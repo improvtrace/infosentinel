@@ -43,7 +43,7 @@ run: build ## 立即执行一轮(自动先编译;传参见 ARGS='-c other.yaml')
 serve: build ## 常驻调度运行(自动先编译;传参见 ARGS='-c other.yaml')
 	$(BIN_DIR)/$(BINARY) $(ARGS) serve
 
-migrate: build ## 初始化/升级数据库;空库写入内置默认配置后退出
+migrate: build ## 初始化/升级数据库;内置默认配置随迁移写入后退出
 	$(BIN_DIR)/$(BINARY) $(ARGS) migrate
 
 package: ## 一键打包:前端+后端 → artifacts/dist/infosentinel-<ver>-<os>-<arch>.tar.gz(含安装/卸载脚本)

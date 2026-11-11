@@ -35,9 +35,12 @@ var (
 	// SubscriptionsColumns holds the columns for the "subscriptions" table.
 	SubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "topic", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "name", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "topics", Type: field.TypeJSON},
+		{Name: "synthesis", Type: field.TypeString},
 		{Name: "cron", Type: field.TypeString},
 		{Name: "targets", Type: field.TypeJSON},
+		{Name: "space", Type: field.TypeString, Default: ""},
 	}
 	// SubscriptionsTable holds the schema information for the "subscriptions" table.
 	SubscriptionsTable = &schema.Table{
@@ -48,7 +51,7 @@ var (
 	// SubscriptionRunsColumns holds the columns for the "subscription_runs" table.
 	SubscriptionRunsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "topic", Type: field.TypeString, Size: 64},
+		{Name: "subscription", Type: field.TypeString, Size: 64},
 		{Name: "trigger", Type: field.TypeString, Size: 16},
 		{Name: "status", Type: field.TypeString, Size: 16},
 		{Name: "started_at", Type: field.TypeTime},
@@ -57,6 +60,7 @@ var (
 		{Name: "error", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "subject", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "body", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "artifacts", Type: field.TypeJSON, Nullable: true},
 	}
 	// SubscriptionRunsTable holds the schema information for the "subscription_runs" table.
 	SubscriptionRunsTable = &schema.Table{
@@ -65,7 +69,7 @@ var (
 		PrimaryKey: []*schema.Column{SubscriptionRunsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "subscriptionrun_topic_started_at",
+				Name:    "subscriptionrun_subscription_started_at",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionRunsColumns[1], SubscriptionRunsColumns[4]},
 			},

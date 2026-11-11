@@ -3,8 +3,9 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { del, get, post, put, mutationMessage, errMsg } from '../api'
 import { ftime } from '../fmt'
 import { IconPlay } from '../components/icons'
-import { Empty, Callout, PageHead } from '../components/ui'
+import { Empty, Callout, PageHead, MultiSelect } from '../components/ui'
 import { useToast } from '../components/Toast'
+import { DEFAULT_SYNTHESIS } from '../types'
 import type { Config, ListResp, MutationResult, NextRun, Overview, Subscription } from '../types'
 
 export default function Subscriptions() {
@@ -22,20 +23,20 @@ export default function Subscriptions() {
   }, [])
   useEffect(load, [load])
 
-  const runNow = async (topic: string) => {
+  const runNow = async (name: string) => {
     try {
-      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(topic)}/run`)
-      toast.ok(`已触发订阅 ${topic},后台执行中`)
+      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(name)}/run`)
+      toast.ok(`已触发订阅 ${name},后台执行中`)
       setTimeout(load, 1200)
     } catch (e) {
       toast.err(errMsg(e))
     }
   }
 
-  const remove = async (topic: string) => {
-    if (!window.confirm(`删除订阅 "${topic}"?(去重状态文件保留)`)) return
+  const remove = async (name: string) => {
+    if (!window.confirm(`删除订阅 "${name}"?(主题与去重状态文件保留)`)) return
     try {
-      const res = await del<MutationResult>(`/api/subscriptions/${encodeURIComponent(topic)}`)
+      const res = await del<MutationResult>(`/api/subscriptions/${encodeURIComponent(name)}`)
       const m = mutationMessage(res)
       setMsg(m.msg ?? '')
       setErr(m.err ?? '')
@@ -49,8 +50,8 @@ export default function Subscriptions() {
     return <SubscriptionForm editing={editing} onDone={() => { setParams({}); load() }} />
   }
 
-  const nextAt = (topic: string) => {
-    const n = nexts.find((x) => x.topic === topic)
+  const nextAt = (name: string) => {
+    const n = nexts.find((x) => x.subscription === name)
     return n ? ftime(n.next) : '—'
   }
 
@@ -58,7 +59,7 @@ export default function Subscriptions() {
     <div>
       <PageHead
         title="订阅管理"
-        desc="一个订阅 = 主题 + 一个 cron 调度 + 多个推送目标;主题即订阅身份,保存即校验并热生效。"
+        desc="一个订阅 = 名称 + 多个主题(各自采集后合并为一份报告)+ 一个 cron 调度 + 多个推送目标;保存即校验并热生效。"
       />
       <Callout msg={msg} err={err} />
       <div className="flex items-center justify-between mb-3">
@@ -69,24 +70,26 @@ export default function Subscriptions() {
       </div>
       {items.length > 0 ? (
         <div className="card overflow-x-auto"><table className="tbl">
-          <thead><tr><th>主题</th><th>cron</th><th>推送目标</th><th>下次触发</th><th className="text-right">操作</th></tr></thead>
+          <thead><tr><th>名称</th><th>主题</th><th>cron</th><th>推送目标</th><th>产物空间</th><th>下次触发</th><th className="text-right">操作</th></tr></thead>
           <tbody>
             {items.map((s) => (
-              <tr key={s.topic}>
+              <tr key={s.name}>
                 <td>
-                  <Link className="font-medium text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(s.topic)}`}>
-                    {s.topic}
+                  <Link className="font-medium text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(s.name)}`}>
+                    {s.name}
                   </Link>
                 </td>
+                <td className="text-dim">{s.topics.join('、')}</td>
                 <td><span className="mono">{s.cron}</span></td>
                 <td className="text-dim">{s.targets.join(', ')}</td>
-                <td className="text-dim whitespace-nowrap">{nextAt(s.topic)}</td>
+                <td className="text-dim">{s.space || '—'}</td>
+                <td className="text-dim whitespace-nowrap">{nextAt(s.name)}</td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="btn btn-ghost btn-sm" onClick={() => runNow(s.topic)}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => runNow(s.name)}>
                     <IconPlay width={12} height={12} /> 运行
                   </button>{' '}
-                  <button className="btn btn-ghost btn-sm" onClick={() => setParams({ edit: s.topic })}>编辑</button>{' '}
-                  <button className="btn btn-danger btn-sm" onClick={() => remove(s.topic)}>删除</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setParams({ edit: s.name })}>编辑</button>{' '}
+                  <button className="btn btn-danger btn-sm" onClick={() => remove(s.name)}>删除</button>
                 </td>
               </tr>
             ))}
@@ -99,25 +102,30 @@ export default function Subscriptions() {
 
 function SubscriptionForm({ editing, onDone }: { editing: string; onDone: () => void }) {
   const isNew = editing === 'new'
-  const [s, setS] = useState<Subscription>({ topic: '', cron: '0 8 * * *', targets: [] })
-  const [topics, setTopics] = useState<string[]>([])
+  const [s, setS] = useState<Subscription>({
+    name: '',
+    topics: [],
+    synthesis: DEFAULT_SYNTHESIS,
+    cron: '0 8 * * *',
+    targets: [],
+    space: '',
+  })
+  const [allTopics, setAllTopics] = useState<string[]>([])
   const [allTargets, setAllTargets] = useState<string[]>([])
+  const [allSpaces, setAllSpaces] = useState<string[]>([])
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     get<Config>('/api/config')
       .then((c) => {
+        setAllTopics(c.topics.map((x) => x.name))
         setAllTargets(c.targets.map((x) => x.name))
+        setAllSpaces(c.storage.spaces.map((x) => x.name))
         if (isNew) {
-          // 新建时只能选择尚未被订阅的主题(主题即订阅身份)
-          const subscribed = new Set(c.subscriptions.map((x) => x.topic))
-          const avail = c.topics.map((x) => x.name).filter((n) => !subscribed.has(n))
-          setTopics(avail)
-          setS((p) => ({ ...p, topic: avail[0] ?? '' }))
+          setS((p) => ({ ...p, space: c.storage.spaces[0]?.name ?? '' }))
         } else {
-          setTopics(c.topics.map((x) => x.name))
-          const found = c.subscriptions.find((x) => x.topic === editing)
+          const found = c.subscriptions.find((x) => x.name === editing)
           if (found) setS(found)
           else setErr(`订阅 "${editing}" 不存在`)
         }
@@ -140,13 +148,6 @@ function SubscriptionForm({ editing, onDone }: { editing: string; onDone: () => 
     }
   }
 
-  const toggleTarget = (name: string) => {
-    setS((p) => ({
-      ...p,
-      targets: p.targets.includes(name) ? p.targets.filter((x) => x !== name) : [...p.targets, name],
-    }))
-  }
-
   return (
     <div>
       <Callout err={err} />
@@ -157,21 +158,37 @@ function SubscriptionForm({ editing, onDone }: { editing: string; onDone: () => 
           save()
         }}
       >
-        <label className="field-label">主题(订阅的唯一标识;保存后不可改)</label>
+        <label className="field-label">订阅名称(唯一标识;保存后不可改)</label>
         {isNew ? (
-          <>
-            <select className="input" value={s.topic} onChange={(e) => setS({ ...s, topic: e.target.value })}>
-              {topics.length === 0 && <option value="">(没有可订阅的主题:全部已订阅或尚未创建)</option>}
-              {topics.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            <p className="mt-1 text-[12px] text-ghost">一个主题最多一条订阅;如需新主题,请先到"配置管理 → 主题"创建。</p>
-          </>
+          <input
+            className="input"
+            value={s.name}
+            onChange={(e) => setS({ ...s, name: e.target.value })}
+            placeholder="如 ai-agent-日报"
+          />
         ) : (
-          <>
-            <span className="mono">{editing}</span>
-            <p className="mt-1 text-[12px] text-ghost">主题即订阅身份,不可改;如需换主题请新建订阅。</p>
-          </>
+          <span className="mono">{editing}</span>
         )}
+        <p className="mt-1 text-[12px] text-ghost">产物文件与运行记录都以订阅名称标识;如需改名请新建订阅。</p>
+
+        <label className="field-label">关联主题(可多选;各主题独立采集,报告最终合并为一份)</label>
+        <MultiSelect
+          options={allTopics}
+          value={s.topics}
+          onChange={(topics) => setS({ ...s, topics })}
+          placeholder="选择要关联的主题"
+          emptyText="暂无主题,请先到「配置管理 → 主题」创建"
+        />
+        <p className="mt-1 text-[12px] text-ghost">同一主题可被多个订阅引用;如需新主题,请先到「配置管理 → 主题」创建。</p>
+
+        <label className="field-label">合成提示词(多主题报告合并为一份的指令)</label>
+        <textarea
+          className="input font-mono text-xs"
+          rows={4}
+          value={s.synthesis}
+          onChange={(e) => setS({ ...s, synthesis: e.target.value })}
+        />
+        <p className="mt-1 text-[12px] text-ghost">仅关联一个主题时不会触发合并;建议 200 字以内。</p>
 
         <label className="field-label">调度 cron(单个五段表达式,本地时区)</label>
         <input
@@ -183,13 +200,20 @@ function SubscriptionForm({ editing, onDone }: { editing: string; onDone: () => 
         <p className="mt-1 text-[12px] text-ghost">示例:每天 8 点 <code className="mono">0 8 * * *</code>;工作日 20:30 <code className="mono">30 20 * * 1-5</code></p>
 
         <label className="field-label">推送目标(可多选)</label>
-        {allTargets.length === 0 && <p className="text-[12px] text-ghost m-0">暂无推送目标,请先到"配置管理 → 推送目标"新建</p>}
-        {allTargets.map((n) => (
-          <label key={n} className="mt-1.5 flex items-center gap-2 text-[13px]">
-            <input type="checkbox" className="check" checked={s.targets.includes(n)} onChange={() => toggleTarget(n)} />
-            {n}
-          </label>
-        ))}
+        <MultiSelect
+          options={allTargets}
+          value={s.targets}
+          onChange={(targets) => setS({ ...s, targets })}
+          placeholder="选择推送目标"
+          emptyText="暂无推送目标,请先到「配置管理 → 推送目标」新建"
+        />
+
+        <label className="field-label">产物空间(站内信报告写入此处)</label>
+        <select className="input" value={s.space} onChange={(e) => setS({ ...s, space: e.target.value })}>
+          <option value="">不写产物空间(仅真实邮件推送)</option>
+          {allSpaces.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <p className="mt-1 text-[12px] text-ghost">空间在「配置管理 → 全局设置 → 产物空间」中维护;邮件(smtp)投递不受此项影响。</p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <button className="btn" disabled={saving} type="submit">保存</button>

@@ -1,12 +1,12 @@
 // model.go 是数据库业务配置的模型层:类型定义、校验与查找辅助。
 //
-// 业务配置(sources/topics/targets/subscriptions/llm/mailer/server)全部存于 SQLite,
+// 业务配置(topics/targets/subscriptions/llm/mailer/server/storage)全部存于 SQLite,
 // 本文件提供运行时结构与校验;内置默认值由 repository/migrate 在迁移时初始化。
+// 采集信息源没有全局配置:五个内置工具常驻,源地址等由主题提示词描述。
 package repository
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -15,16 +15,13 @@ import (
 
 // Config 是 infosentinel 的运行时顶层业务配置(由数据库组装)。
 type Config struct {
-	// Sources 是公用数据源池。
-	Sources Sources `json:"sources"`
-
 	// Topics 是主题列表,每项一段 prompt。
 	Topics []Topic `json:"topics"`
 
 	// Targets 是推送目标(通道)列表。
 	Targets []Target `json:"targets"`
 
-	// Subscriptions 是订阅列表:{主题, cron, 推送目标};主题即订阅唯一标识。
+	// Subscriptions 是订阅列表:{名称, 主题列表, cron, 推送目标, 产物空间}。
 	Subscriptions []Subscription `json:"subscriptions"`
 
 	// Server 是 serve 模式的 Web 管理界面配置。
@@ -36,7 +33,7 @@ type Config struct {
 	// Mailer 是发送器全局配置(站内信/smtp)。
 	Mailer MailerConfig `json:"mailer"`
 
-	// Storage 是产物空间全局配置(本地磁盘/SFTP/FTP 驱动 + 分桶保留策略)。
+	// Storage 是产物空间全局配置:可同时配置多个空间(本地磁盘/SFTP/FTP),订阅按名引用。
 	Storage StorageConfig `json:"storage"`
 }
 
@@ -45,87 +42,6 @@ func (c *Config) Finalize() error {
 	c.Mailer.normalizeLegacy() // 旧库中的 dryrun 映射为站内信
 	c.Storage.finalize()       // 缺省补 local 与默认分桶参数(兼容无 storage 段的旧库)
 	return c.Validate()
-}
-
-// Sources 是公用数据源池:每类源对应一个内置工具,同类多实例共用该工具。
-type Sources struct {
-	// Collect 是采集通用参数。
-	Collect CollectConfig `json:"collect"`
-
-	// RSS 是 RSS/Atom 订阅源(fetch_rss 工具)。
-	RSS RSSConfig `json:"rss"`
-
-	// Search 是 DuckDuckGo 搜索(search_web 工具)。
-	Search SearchConfig `json:"search"`
-
-	// HackerNews 是 HN 热榜(fetch_hackernews 工具)。
-	HackerNews HackerNewsConfig `json:"hackernews"`
-
-	// GitHubTrending 是 GitHub Trending(fetch_github_trending 工具)。
-	GitHubTrending GitHubTrendingConfig `json:"github_trending"`
-
-	// Webpages 是固定网页列表(fetch_webpage 工具按 URL 抓取),非空即启用。
-	Webpages []Webpage `json:"webpages"`
-}
-
-// CollectConfig 是采集通用参数。
-type CollectConfig struct {
-	// WindowHours 是内容时间窗:只保留最近 N 小时内发布/更新的条目(RSS/HN)。
-	WindowHours int `json:"window_hours"`
-	// MaxItemsPerSource 是单个工具单次返回的最大条目数,控制上下文长度。
-	MaxItemsPerSource int `json:"max_items_per_source"`
-	// HTTPTimeoutSec 是采集请求的超时秒数。
-	HTTPTimeoutSec int `json:"http_timeout_sec"`
-	// MaxBodyChars 是单条网页正文的截断字符数。
-	MaxBodyChars int `json:"max_body_chars"`
-	// DedupDays 是 URL 去重状态保留天数,超过则重新允许出现。
-	DedupDays int `json:"dedup_days"`
-}
-
-// RSSConfig 是 RSS 订阅源配置。
-type RSSConfig struct {
-	Enabled bool      `json:"enabled"`
-	Feeds   []RSSFeed `json:"feeds"`
-}
-
-// RSSFeed 是单个 RSS/Atom 源。
-type RSSFeed struct {
-	// Name 是源的可读名称,展示给 LLM 与邮件读者。
-	Name string `json:"name"`
-	// URL 是 RSS/Atom 地址。
-	URL string `json:"url"`
-}
-
-// SearchConfig 是搜索引擎(DuckDuckGo)配置。
-type SearchConfig struct {
-	Enabled bool   `json:"enabled"`
-	Region  string `json:"region"` // ddgsearch region,如 cn-zh / us-en / wt-wt
-	// MaxResults 是单次搜索返回的最大结果数。
-	MaxResults int `json:"max_results"`
-}
-
-// HackerNewsConfig 是 Hacker News 热榜配置。
-type HackerNewsConfig struct {
-	Enabled bool `json:"enabled"`
-	// TopN 是从热榜取前 N 条。
-	TopN int `json:"top_n"`
-	// MinPoints 是最低分阈值,过滤低热度条目。
-	MinPoints int `json:"min_points"`
-}
-
-// GitHubTrendingConfig 是 GitHub Trending 配置。
-type GitHubTrendingConfig struct {
-	Enabled bool `json:"enabled"`
-	// Language 是过滤的编程语言,空表示全部。
-	Language string `json:"language"`
-	// TopN 是取前 N 个仓库。
-	TopN int `json:"top_n"`
-}
-
-// Webpage 是固定抓取的网页。
-type Webpage struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
 }
 
 // Topic 是主题:一段外部撰写的 prompt,agent 据此采集与生成报告。
@@ -148,16 +64,28 @@ type Target struct {
 	SubjectPrefix string `json:"subject_prefix"`
 }
 
-// Subscription 是订阅:{主题, cron, 推送目标}。
-// 主题即订阅的唯一标识:一个主题最多一条订阅,也用于隔离去重状态与产物分桶。
+// Subscription 是订阅:{名称, 主题列表, 合成提示词, cron, 推送目标, 产物空间}。
+// 名称即订阅的唯一标识;订阅与主题多对多(一个订阅可关联多个主题,一个主题
+// 可被多个订阅引用),与产物空间一对一(不选则站内信无投递目标)。
 type Subscription struct {
-	// Topic 引用主题名(唯一)。
-	Topic string `json:"topic"`
+	// Name 是订阅唯一标识。
+	Name string `json:"name"`
+	// Topics 引用主题名列表(每个主题独立采集与去重,报告最终合并为一份)。
+	Topics []string `json:"topics"`
+	// Synthesis 是合成提示词:多主题报告合并为一份最终报告的指令。
+	Synthesis string `json:"synthesis"`
 	// Cron 是单个 cron 表达式(五段),订阅的定时调度。
 	Cron string `json:"cron"`
 	// Targets 引用推送目标名,可多个。
 	Targets []string `json:"targets"`
+	// Space 引用产物空间名(单个);空表示不写产物空间(纯 SMTP 推送)。
+	Space string `json:"space"`
 }
+
+// DefaultSynthesis 是合成提示词的默认值(新建订阅为空时回填)。
+// 默认让合成报告直接输出 HTML 正文片段:推送与产物最终都是 HTML,
+// 由模型直接产出结构化片段可获得比 Markdown 转换更丰富的排版。
+const DefaultSynthesis = "你是资讯编辑。请把多份主题报告合并为一份最终报告:去除重复与冗余,按主题分节或按重要性排序,保留每条的原文链接与一句话摘要,开头用一段导语概括本期整体看点。第一行只写总标题纯文本;从第二行起用中文 HTML 片段撰写正文(<section>/<h2>/<p>/<ul>/<table> 等内容级标签,不含 <html>/<body>/<style>/<script>),链接用 <a> 标签原样保留。"
 
 // ServerConfig 是 serve 模式的 Web 管理界面配置。
 type ServerConfig struct {
@@ -219,8 +147,28 @@ type SmtpConfig struct {
 	SSL *bool `json:"ssl"`
 }
 
-// StorageConfig 是产物空间全局配置。
+// DefaultSpaceName 是产物空间的缺省空间名(旧库包装与空配置回填时使用)。
+const DefaultSpaceName = "默认空间"
+
+// StorageConfig 是产物空间全局配置:可同时配置多个空间,订阅按名引用其中之一。
 type StorageConfig struct {
+	// Spaces 是产物空间列表。
+	Spaces []StorageSpace `json:"spaces"`
+
+	// 以下扁平字段为旧库单空间 JSON 的兼容读取(omitempty:序列化时不输出;
+	// 加载后由 finalize 包装进 Spaces 并清空),新配置不应再写入这些字段。
+	Type       string      `json:"type,omitempty"`
+	Path       string      `json:"path,omitempty"`
+	PeriodDays int         `json:"period_days,omitempty"`
+	MaxDirs    int         `json:"max_dirs,omitempty"`
+	SFTP       StorageSFTP `json:"sftp,omitempty"`
+	FTP        StorageFTP  `json:"ftp,omitempty"`
+}
+
+// StorageSpace 是一个产物空间配置(存储驱动 + 分桶保留策略)。
+type StorageSpace struct {
+	// Name 是空间唯一标识,供订阅引用。
+	Name string `json:"name"`
 	// Type 是存储驱动类型:local(本地磁盘)/ sftp / ftp。
 	Type string `json:"type"`
 	// Path 是产物路径(页面配置,相对存储根目录;空为根目录)。
@@ -273,8 +221,38 @@ const (
 	StorageTypeFTP   = "ftp"
 )
 
-// finalize 补齐产物空间配置缺省值:类型缺省 local,分桶参数缺省 1 天 / 30 个。
+// finalize 补齐产物空间配置:旧库单空间扁平 JSON 包装为一个空间;无任何空间时
+// 回填一个本地默认空间(与旧版"缺省补 local"行为一致);逐空间补缺省值。
+// 兼容扁平字段在包装后清空,持久化时只保留 Spaces 列表。
 func (s *StorageConfig) finalize() {
+	if len(s.Spaces) == 0 && s.hasLegacy() {
+		s.Spaces = []StorageSpace{{
+			Name:       DefaultSpaceName,
+			Type:       s.Type,
+			Path:       s.Path,
+			PeriodDays: s.PeriodDays,
+			MaxDirs:    s.MaxDirs,
+			SFTP:       s.SFTP,
+			FTP:        s.FTP,
+		}}
+	}
+	s.Type, s.Path, s.PeriodDays, s.MaxDirs = "", "", 0, 0
+	s.SFTP, s.FTP = StorageSFTP{}, StorageFTP{}
+	if len(s.Spaces) == 0 {
+		s.Spaces = []StorageSpace{{Name: DefaultSpaceName, Type: StorageTypeLocal}}
+	}
+	for i := range s.Spaces {
+		s.Spaces[i].finalize()
+	}
+}
+
+// hasLegacy 判断是否存在旧库单空间扁平配置(非零即视为有)。
+func (s *StorageConfig) hasLegacy() bool {
+	return s.Type != "" || s.Path != "" || s.PeriodDays > 0 || s.MaxDirs > 0
+}
+
+// finalize 补齐单个产物空间的缺省值:类型缺省 local,分桶参数缺省 1 天 / 30 个。
+func (s *StorageSpace) finalize() {
 	if s.Type == "" {
 		s.Type = StorageTypeLocal
 	}
@@ -286,27 +264,46 @@ func (s *StorageConfig) finalize() {
 	}
 }
 
-// Validate 校验产物空间配置。
+// Validate 校验产物空间全局配置。
 func (s *StorageConfig) Validate() error {
+	if len(s.Spaces) == 0 {
+		return fmt.Errorf("storage.spaces 不能为空:请至少配置一个产物空间")
+	}
+	if err := validateUnique(spaceNames(s.Spaces), "storage.space"); err != nil {
+		return err
+	}
+	for i := range s.Spaces {
+		if err := s.Spaces[i].Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate 校验单个产物空间配置。
+func (s *StorageSpace) Validate() error {
+	if s.Name == "" {
+		return fmt.Errorf("storage.space.name 不能为空")
+	}
 	switch s.Type {
 	case StorageTypeLocal, StorageTypeSFTP, StorageTypeFTP:
 	default:
-		return fmt.Errorf("storage.type 仅支持 local / sftp / ftp,当前为 %q", s.Type)
+		return fmt.Errorf("产物空间 %q 的 type 仅支持 local / sftp / ftp,当前为 %q", s.Name, s.Type)
 	}
 	if _, err := storage.CleanRel(s.Path); err != nil {
-		return fmt.Errorf("storage.path 不合法: %w", err)
+		return fmt.Errorf("产物空间 %q 的 path 不合法: %w", s.Name, err)
 	}
 	if s.PeriodDays < 1 {
-		return fmt.Errorf("storage.period_days 必须 >= 1,当前为 %d", s.PeriodDays)
+		return fmt.Errorf("产物空间 %q 的 period_days 必须 >= 1,当前为 %d", s.Name, s.PeriodDays)
 	}
 	if s.MaxDirs < 1 {
-		return fmt.Errorf("storage.max_dirs 必须 >= 1,当前为 %d", s.MaxDirs)
+		return fmt.Errorf("产物空间 %q 的 max_dirs 必须 >= 1,当前为 %d", s.Name, s.MaxDirs)
 	}
 	if s.Type == StorageTypeSFTP && s.SFTP.Host == "" {
-		return fmt.Errorf("storage.type=sftp 时必须配置 storage.sftp.host")
+		return fmt.Errorf("产物空间 %q(type=sftp)必须配置 sftp.host", s.Name)
 	}
 	if s.Type == StorageTypeFTP && s.FTP.Host == "" {
-		return fmt.Errorf("storage.type=ftp 时必须配置 storage.ftp.host")
+		return fmt.Errorf("产物空间 %q(type=ftp)必须配置 ftp.host", s.Name)
 	}
 	return nil
 }
@@ -319,11 +316,6 @@ func (c *Config) Validate() error {
 	}
 	if len(c.Targets) == 0 {
 		return fmt.Errorf("targets 不能为空:请至少配置一个推送目标")
-	}
-
-	// 数据源
-	if err := c.Sources.Validate(); err != nil {
-		return err
 	}
 
 	if err := validateUnique(topicNames(c.Topics), "topic"); err != nil {
@@ -355,34 +347,51 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// 订阅:允许为空(全部退订是合法状态),但引用必须完整
-	if err := validateUnique(subscriptionTopics(c.Subscriptions), "subscription"); err != nil {
+	// 订阅:允许为空(全部退订是合法状态);名称唯一,主题/推送目标/产物空间引用必须完整。
+	// 订阅与主题多对多:同一主题可被多个订阅引用。
+	if err := validateUnique(subscriptionNames(c.Subscriptions), "subscription"); err != nil {
 		return err
 	}
+	spaces := spaceSet(c.Storage.Spaces)
 	topics := topicSet(c.Topics)
 	targets := targetSet(c.Targets)
 	for _, s := range c.Subscriptions {
-		if s.Topic == "" {
-			return fmt.Errorf("subscription.topic 不能为空")
+		if len(s.Topics) == 0 {
+			return fmt.Errorf("订阅 %q 未关联任何主题", s.Name)
 		}
-		if _, ok := topics[s.Topic]; !ok {
-			return fmt.Errorf("subscription 引用了不存在的 topic %q", s.Topic)
+		seenTopic := map[string]struct{}{}
+		for _, ref := range s.Topics {
+			if _, ok := topics[ref]; !ok {
+				return fmt.Errorf("订阅 %q 引用了不存在的 topic %q", s.Name, ref)
+			}
+			if _, dup := seenTopic[ref]; dup {
+				return fmt.Errorf("订阅 %q 的 topics 中 %q 重复", s.Name, ref)
+			}
+			seenTopic[ref] = struct{}{}
+		}
+		if s.Synthesis == "" {
+			return fmt.Errorf("订阅 %q 的 synthesis 不能为空:多主题报告需合成提示词合并", s.Name)
 		}
 		if len(s.Targets) == 0 {
-			return fmt.Errorf("订阅 %q 未配置任何 targets", s.Topic)
+			return fmt.Errorf("订阅 %q 未配置任何 targets", s.Name)
 		}
 		seen := map[string]struct{}{}
 		for _, ref := range s.Targets {
 			if _, ok := targets[ref]; !ok {
-				return fmt.Errorf("订阅 %q 引用了不存在的 target %q", s.Topic, ref)
+				return fmt.Errorf("订阅 %q 引用了不存在的 target %q", s.Name, ref)
 			}
 			if _, dup := seen[ref]; dup {
-				return fmt.Errorf("订阅 %q 的 targets 中 %q 重复", s.Topic, ref)
+				return fmt.Errorf("订阅 %q 的 targets 中 %q 重复", s.Name, ref)
 			}
 			seen[ref] = struct{}{}
 		}
+		if s.Space != "" {
+			if _, ok := spaces[s.Space]; !ok {
+				return fmt.Errorf("订阅 %q 引用了不存在的产物空间 %q", s.Name, s.Space)
+			}
+		}
 		if _, err := cron.ParseStandard(s.Cron); err != nil {
-			return fmt.Errorf("订阅 %q 的 cron 表达式 %q 不合法: %v", s.Topic, s.Cron, err)
+			return fmt.Errorf("订阅 %q 的 cron 表达式 %q 不合法: %v", s.Name, s.Cron, err)
 		}
 	}
 
@@ -405,28 +414,6 @@ func (c *Config) Validate() error {
 	}
 	if err := c.Storage.Validate(); err != nil {
 		return err
-	}
-	return nil
-}
-
-// Validate 校验数据源配置。
-func (s *Sources) Validate() error {
-	if !s.RSS.Enabled && !s.Search.Enabled && !s.HackerNews.Enabled &&
-		!s.GitHubTrending.Enabled && len(s.Webpages) == 0 {
-		return fmt.Errorf("sources 未启用任何数据源:请至少开启 rss/search/hackernews/github_trending 之一,或配置 webpages")
-	}
-	if s.RSS.Enabled && len(s.RSS.Feeds) == 0 {
-		return fmt.Errorf("sources.rss.enabled 为 true 时 feeds 不能为空")
-	}
-	for i, f := range s.RSS.Feeds {
-		if f.URL == "" {
-			return fmt.Errorf("sources.rss.feeds[%d].url 不能为空", i)
-		}
-	}
-	for i, p := range s.Webpages {
-		if p.URL == "" {
-			return fmt.Errorf("sources.webpages[%d].url 不能为空", i)
-		}
 	}
 	return nil
 }
@@ -464,19 +451,14 @@ func (c *Config) TargetByName(name string) *Target {
 	return nil
 }
 
-// SubscriptionByTopic 按主题查找订阅,找不到返回 nil。
-func (c *Config) SubscriptionByTopic(topic string) *Subscription {
+// SubscriptionByName 按名称查找订阅,找不到返回 nil。
+func (c *Config) SubscriptionByName(name string) *Subscription {
 	for i := range c.Subscriptions {
-		if c.Subscriptions[i].Topic == topic {
+		if c.Subscriptions[i].Name == name {
 			return &c.Subscriptions[i]
 		}
 	}
 	return nil
-}
-
-// HTTPTimeout 返回采集请求超时。
-func (c *Config) HTTPTimeout() time.Duration {
-	return time.Duration(c.Sources.Collect.HTTPTimeoutSec) * time.Second
 }
 
 // ---- 名称辅助 ----
@@ -497,12 +479,28 @@ func targetNames(ts []Target) []string {
 	return out
 }
 
-func subscriptionTopics(ss []Subscription) []string {
+func subscriptionNames(ss []Subscription) []string {
 	out := make([]string, len(ss))
 	for i, s := range ss {
-		out[i] = s.Topic
+		out[i] = s.Name
 	}
 	return out
+}
+
+func spaceNames(ss []StorageSpace) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = s.Name
+	}
+	return out
+}
+
+func spaceSet(ss []StorageSpace) map[string]struct{} {
+	m := make(map[string]struct{}, len(ss))
+	for _, s := range ss {
+		m[s.Name] = struct{}{}
+	}
+	return m
 }
 
 func topicSet(ts []Topic) map[string]struct{} {

@@ -17,12 +17,18 @@ type Subscription struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
-	// Topic holds the value of the "topic" field.
-	Topic string `json:"topic,omitempty"`
+	// Name holds the value of the "name" field.
+	Name string `json:"name,omitempty"`
+	// Topics holds the value of the "topics" field.
+	Topics []string `json:"topics,omitempty"`
+	// Synthesis holds the value of the "synthesis" field.
+	Synthesis string `json:"synthesis,omitempty"`
 	// Cron holds the value of the "cron" field.
 	Cron string `json:"cron,omitempty"`
 	// Targets holds the value of the "targets" field.
-	Targets      []string `json:"targets,omitempty"`
+	Targets []string `json:"targets,omitempty"`
+	// Space holds the value of the "space" field.
+	Space        string `json:"space,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -31,11 +37,11 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case subscription.FieldTargets:
+		case subscription.FieldTopics, subscription.FieldTargets:
 			values[i] = new([]byte)
 		case subscription.FieldID:
 			values[i] = new(sql.NullInt64)
-		case subscription.FieldTopic, subscription.FieldCron:
+		case subscription.FieldName, subscription.FieldSynthesis, subscription.FieldCron, subscription.FieldSpace:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -58,11 +64,25 @@ func (_m *Subscription) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
-		case subscription.FieldTopic:
+		case subscription.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field topic", values[i])
+				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
-				_m.Topic = value.String
+				_m.Name = value.String
+			}
+		case subscription.FieldTopics:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field topics", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Topics); err != nil {
+					return fmt.Errorf("unmarshal field topics: %w", err)
+				}
+			}
+		case subscription.FieldSynthesis:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field synthesis", values[i])
+			} else if value.Valid {
+				_m.Synthesis = value.String
 			}
 		case subscription.FieldCron:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -77,6 +97,12 @@ func (_m *Subscription) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &_m.Targets); err != nil {
 					return fmt.Errorf("unmarshal field targets: %w", err)
 				}
+			}
+		case subscription.FieldSpace:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field space", values[i])
+			} else if value.Valid {
+				_m.Space = value.String
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -114,14 +140,23 @@ func (_m *Subscription) String() string {
 	var builder strings.Builder
 	builder.WriteString("Subscription(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
-	builder.WriteString("topic=")
-	builder.WriteString(_m.Topic)
+	builder.WriteString("name=")
+	builder.WriteString(_m.Name)
+	builder.WriteString(", ")
+	builder.WriteString("topics=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Topics))
+	builder.WriteString(", ")
+	builder.WriteString("synthesis=")
+	builder.WriteString(_m.Synthesis)
 	builder.WriteString(", ")
 	builder.WriteString("cron=")
 	builder.WriteString(_m.Cron)
 	builder.WriteString(", ")
 	builder.WriteString("targets=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Targets))
+	builder.WriteString(", ")
+	builder.WriteString("space=")
+	builder.WriteString(_m.Space)
 	builder.WriteByte(')')
 	return builder.String()
 }

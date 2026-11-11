@@ -12,7 +12,7 @@ import (
 
 // Job 是一个可调度的订阅任务。
 type Job struct {
-	// Name 是订阅主题(仅用于日志)。
+	// Name 是订阅名称(仅用于日志)。
 	Name string
 	// Schedule 是 cron 表达式(五段)。
 	Schedule string
@@ -22,9 +22,9 @@ type Job struct {
 
 // NextRun 描述某个订阅的下次触发时间。
 type NextRun struct {
-	Topic string    `json:"topic"`
-	Cron  string    `json:"cron"`
-	Next  time.Time `json:"next"`
+	Subscription string    `json:"subscription"`
+	Cron         string    `json:"cron"`
+	Next         time.Time `json:"next"`
 }
 
 // Scheduler 包装 robfig/cron。
@@ -68,7 +68,7 @@ func (s *Scheduler) Start(jobs []Job) ([]NextRun, error) {
 			s.c.Stop()
 			return nil, fmt.Errorf("订阅 %s 的 cron 表达式 %q 不合法: %w", j.Name, j.Schedule, err)
 		}
-		s.regs = append(s.regs, regEntry{nr: NextRun{Topic: j.Name, Cron: j.Schedule}, id: id})
+		s.regs = append(s.regs, regEntry{nr: NextRun{Subscription: j.Name, Cron: j.Schedule}, id: id})
 	}
 
 	s.c.Start()

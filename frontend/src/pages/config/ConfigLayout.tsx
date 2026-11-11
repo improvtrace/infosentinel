@@ -4,7 +4,6 @@ const TABS = [
   { to: '.', label: '概览', end: true },
   { to: 'topics', label: '主题' },
   { to: 'targets', label: '推送目标' },
-  { to: 'sources', label: '数据源' },
   { to: 'settings', label: '全局设置' },
 ]
 

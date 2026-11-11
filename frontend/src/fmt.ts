@@ -35,3 +35,15 @@ export function triggerLabel(t?: string): string {
   if (t === 'manual') return '手动'
   return t ?? '—'
 }
+
+// parseDsn 解析产物 DSN(类型://空间名/分桶/文件名)为可跳转的地址段;
+// 格式不符返回 null。
+export function parseDsn(dsn: string): { space: string; bucket: string; name: string } | null {
+  const idx = dsn.indexOf('://')
+  if (idx <= 0) return null
+  const parts = dsn.slice(idx + 3).split('/')
+  if (parts.length < 3) return null
+  const [space, bucket, name] = parts
+  if (!space || !bucket || !name) return null
+  return { space, bucket, name }
+}

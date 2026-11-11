@@ -55,13 +55,13 @@ func TestSaveListRead(t *testing.T) {
 	m := newLocalManager(t, Options{Path: "products", PeriodDays: 1})
 	ctx := context.Background()
 
-	rel, err := m.Save(ctx, "ai-agent-daily-20261109-080000.html", []byte("<h1>ok</h1>"))
+	bucket, err := m.Save(ctx, "ai-agent-daily-20261109-080000.html", []byte("<h1>ok</h1>"))
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	wantBucket := BucketOf(time.Now(), 1)
-	if rel != "products/"+wantBucket+"/ai-agent-daily-20261109-080000.html" {
-		t.Errorf("Save 返回路径 %q 不含预期分桶", rel)
+	if bucket != wantBucket {
+		t.Errorf("Save 返回分桶 %q,期望 %q", bucket, wantBucket)
 	}
 
 	files, err := m.List(ctx)
@@ -144,6 +144,30 @@ func TestNewValidation(t *testing.T) {
 	}
 	if _, err := New(Options{Store: &fakeStore{}, Path: "../evil"}); err == nil {
 		t.Error("穿越产物路径应报错")
+	}
+}
+
+// TestDSNRoundTrip 校验产物 DSN 的构造与解析往返,以及非法格式拦截。
+func TestDSNRoundTrip(t *testing.T) {
+	dsn := DSN("local", "默认空间", "2026-11-11", "ai-agent-20261111-080000.html")
+	space, bucket, name, err := ParseDSN(dsn)
+	if err != nil {
+		t.Fatalf("ParseDSN: %v", err)
+	}
+	if space != "默认空间" || bucket != "2026-11-11" || name != "ai-agent-20261111-080000.html" {
+		t.Errorf("ParseDSN(%q) = (%q,%q,%q)", dsn, space, bucket, name)
+	}
+
+	for _, bad := range []string{
+		"",
+		"no-scheme",
+		"://空间/2026-11-11/a.html",    // 缺类型
+		"local://空间/a.html",          // 缺文件名段
+		"local:///2026-11-11/a.html", // 缺空间名
+	} {
+		if _, _, _, err := ParseDSN(bad); err == nil {
+			t.Errorf("非法 DSN %q 应解析失败", bad)
+		}
 	}
 }
 

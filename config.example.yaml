@@ -5,12 +5,12 @@
 #   database   数据库位置(SQLite,业务配置的唯一事实源)
 #   log        日志文件与级别(JSON 行,同时输出到 stdout)
 #   storage    产物空间本地磁盘根目录(SFTP/FTP 的连接配置在 Web 界面维护)
-#   state_dir  运行时状态目录(采集去重记录,每个任务一个 <task>.json)
+#   state_dir  运行时状态目录(采集去重记录,每个主题一个 <topic>.json)
 #
 # 路径相对工作目录;运行时产物统一收在 .tests/ 下,
 # 部署时按实际环境在此修改(安装脚本不强制改写)。
 #
-# 业务配置(sources / topics / targets / tasks / llm / mailer / server)
+# 业务配置(topics / targets / subscriptions / llm / mailer / server / storage)
 # 全部存于数据库,通过 Web 管理界面维护 —— 不需要改配置文件,也不读环境变量:
 #   首次初始化:migrate 子命令或首次启动时空库写入内置默认配置
 #   重置配置:停止服务 → 删除数据库文件 → 重启

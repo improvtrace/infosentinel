@@ -23,6 +23,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	"github.com/tomasgdl/infosentinel/backend/internal/artifact"
+	"github.com/tomasgdl/infosentinel/backend/internal/config"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/scheduler"
 	"github.com/tomasgdl/infosentinel/backend/pkg/logger"
@@ -36,9 +37,9 @@ type Deps struct {
 	StartedAt time.Time
 	Config    func() *repository.Config  // 当前生效配置
 	NextRuns  func() []scheduler.NextRun // 各订阅的下次触发
-	Artifacts func() *artifact.Manager   // 产物空间(随配置热重载)
-	IsRunning func(topic string) bool    // 订阅是否在执行中
-	Trigger   func(topic string) error   // 手动触发订阅(后台执行)
+	Artifacts func() *artifact.Spaces    // 产物空间集合(随配置热重载)
+	IsRunning func(name string) bool     // 订阅是否在执行中
+	Trigger   func(name string) error    // 手动触发订阅(后台执行)
 	// TestTarget 向推送目标发送测试邮件。
 	TestTarget func(name string) error
 	// TestLLM 用表单值(不落库)测试模型配置:发一次最小对话请求。
@@ -82,12 +83,10 @@ func New(d Deps, addr string) *khttp.Server {
 
 	api.GET("/subscriptions", s.listSubscriptions)
 	api.POST("/subscriptions", s.createSubscription)
-	api.PUT("/subscriptions/{topic}", s.updateSubscription)
-	api.DELETE("/subscriptions/{topic}", s.deleteSubscription)
-	api.POST("/subscriptions/{topic}/run", s.runSubscriptionPost)
+	api.PUT("/subscriptions/{name}", s.updateSubscription)
+	api.DELETE("/subscriptions/{name}", s.deleteSubscription)
+	api.POST("/subscriptions/{name}/run", s.runSubscriptionPost)
 
-	api.GET("/sources", s.getSources)
-	api.PUT("/sources", s.putSources)
 	api.GET("/settings", s.getSettings)
 	api.PUT("/settings/{section}", s.putSettings)
 	api.POST("/settings/llm/test", s.llmTestPost)
@@ -99,7 +98,7 @@ func New(d Deps, addr string) *khttp.Server {
 	api.GET("/runs", s.listRuns)
 	api.GET("/runs/{id}", s.runDetail)
 	api.GET("/artifacts", s.listArtifacts)
-	api.GET("/artifacts/{bucket}/{name}", s.artifactContent)
+	api.GET("/artifacts/{space}/{bucket}/{name}", s.artifactContent)
 	api.GET("/healthz", s.health)
 
 	srv.HandlePrefix("/", s.spaHandler())
@@ -200,7 +199,7 @@ func (s *Server) overview(ctx khttp.Context) error {
 
 	running := 0
 	for _, sub := range cfg.Subscriptions {
-		if s.d.IsRunning(sub.Topic) {
+		if s.d.IsRunning(sub.Name) {
 			running++
 		}
 	}
@@ -240,7 +239,7 @@ func (s *Server) health(ctx khttp.Context) error {
 	cfg := s.d.Config()
 	running := 0
 	for _, sub := range cfg.Subscriptions {
-		if s.d.IsRunning(sub.Topic) {
+		if s.d.IsRunning(sub.Name) {
 			running++
 		}
 	}
@@ -408,15 +407,18 @@ func (s *Server) listSubscriptions(ctx khttp.Context) error {
 // saveSubscription 是创建/更新订阅的公共路径:整份配置校验(Finalize)→ 落库 → 应用。
 func (s *Server) saveSubscription(ctx khttp.Context, sub repository.Subscription, isNew bool) error {
 	if isNew {
-		if err := validName(sub.Topic); err != nil {
+		if err := validName(sub.Name); err != nil {
 			return apiError(ctx, http.StatusBadRequest, err)
+		}
+		if strings.TrimSpace(sub.Synthesis) == "" {
+			sub.Synthesis = repository.DefaultSynthesis // 合成提示词缺省回填
 		}
 	}
 	cur := *s.d.Config()
 	replaced := false
 	subs := make([]repository.Subscription, 0, len(cur.Subscriptions)+1)
 	for _, e := range cur.Subscriptions {
-		if e.Topic == sub.Topic {
+		if e.Name == sub.Name {
 			subs = append(subs, sub)
 			replaced = true
 		} else {
@@ -445,63 +447,33 @@ func (s *Server) createSubscription(ctx khttp.Context) error {
 }
 
 func (s *Server) updateSubscription(ctx khttp.Context) error {
-	topic := ctxParam(ctx, "topic")
-	if _, err := s.d.Repo.GetSubscription(ctx, topic); err != nil {
-		return apiError(ctx, http.StatusNotFound, fmt.Errorf("订阅 %q 不存在", topic))
+	name := ctxParam(ctx, "name")
+	if _, err := s.d.Repo.GetSubscription(ctx, name); err != nil {
+		return apiError(ctx, http.StatusNotFound, fmt.Errorf("订阅 %q 不存在", name))
 	}
 	var in repository.Subscription
 	if err := decode(ctx.Request(), &in); err != nil {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
-	in.Topic = topic // 主题即订阅身份,不可改
+	in.Name = name // 名称即订阅身份,不可改
 	return s.saveSubscription(ctx, in, false)
 }
 
 func (s *Server) deleteSubscription(ctx khttp.Context) error {
-	if err := s.d.Repo.DeleteSubscription(ctx, ctxParam(ctx, "topic")); err != nil {
+	if err := s.d.Repo.DeleteSubscription(ctx, ctxParam(ctx, "name")); err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
 	return s.respondOK(ctx)
 }
 
 func (s *Server) runSubscriptionPost(ctx khttp.Context) error {
-	if err := s.d.Trigger(ctxParam(ctx, "topic")); err != nil {
+	if err := s.d.Trigger(ctxParam(ctx, "name")); err != nil {
 		return apiError(ctx, http.StatusConflict, err)
 	}
 	return writeJSON(ctx, http.StatusOK, map[string]any{"ok": true, "started": true})
 }
 
-// ---- 数据源 / 设置 / 敏感数据 ----
-
-func (s *Server) getSources(ctx khttp.Context) error {
-	raw, err := yamlMarshal(s.d.Config().Sources)
-	if err != nil {
-		return apiError(ctx, http.StatusInternalServerError, err)
-	}
-	return writeJSON(ctx, http.StatusOK, map[string]any{"yaml": string(raw)})
-}
-
-func (s *Server) putSources(ctx khttp.Context) error {
-	var in struct {
-		YAML string `json:"yaml"`
-	}
-	if err := decode(ctx.Request(), &in); err != nil {
-		return apiError(ctx, http.StatusBadRequest, err)
-	}
-	var src repository.Sources
-	if err := yamlUnmarshal([]byte(in.YAML), &src); err != nil {
-		return apiError(ctx, http.StatusBadRequest, fmt.Errorf("YAML 解析失败:%v", err))
-	}
-	cur := *s.d.Config()
-	cur.Sources = src
-	if err := cur.Finalize(); err != nil {
-		return apiError(ctx, http.StatusBadRequest, err)
-	}
-	if err := s.d.Repo.PutSetting(ctx, "sources", src); err != nil {
-		return apiError(ctx, http.StatusInternalServerError, err)
-	}
-	return s.respondOK(ctx)
-}
+// ---- 设置 / 敏感数据 ----
 
 func (s *Server) getSettings(ctx khttp.Context) error {
 	cfg := s.d.Config()
@@ -520,6 +492,7 @@ func (s *Server) putSettings(ctx khttp.Context) error {
 
 	var secretName, secret string
 	var persist func() error
+	var persistSecrets func() error // 多密钥分区(如 storage 的逐空间密码)
 	switch section {
 	case "llm":
 		var in struct {
@@ -553,14 +526,27 @@ func (s *Server) putSettings(ctx khttp.Context) error {
 	case "storage":
 		var in struct {
 			repository.StorageConfig
-			Secret string `json:"secret"`
+			// Secrets 是逐空间密码表:键为空间名,值为明文密码(非空则加密落库为
+			// storage.<空间名>.password);留空的键不动已存密钥。
+			Secrets map[string]string `json:"secrets"`
 		}
 		if err := decode(ctx.Request(), &in); err != nil {
 			return apiError(ctx, http.StatusBadRequest, err)
 		}
 		cur.Storage = in.StorageConfig
-		secretName, secret = "storage.password", in.Secret
 		persist = func() error { return s.d.Repo.PutSetting(ctx, "storage", in.StorageConfig) }
+		persistSecrets = func() error {
+			for name, pass := range in.Secrets {
+				if strings.TrimSpace(pass) == "" {
+					continue
+				}
+				if err := s.d.Repo.SetSecret(ctx, config.SpacePasswordName(name), pass); err != nil {
+					return err
+				}
+				s.d.Log.Infow("secret_saved", "name", config.SpacePasswordName(name))
+			}
+			return nil
+		}
 	default:
 		return apiError(ctx, http.StatusNotFound, fmt.Errorf("未知设置分区 %q", section))
 	}
@@ -574,6 +560,11 @@ func (s *Server) putSettings(ctx khttp.Context) error {
 			return apiError(ctx, http.StatusBadRequest, err)
 		}
 		s.d.Log.Infow("secret_saved", "name", secretName)
+	}
+	if persistSecrets != nil {
+		if err := persistSecrets(); err != nil {
+			return apiError(ctx, http.StatusBadRequest, err)
+		}
 	}
 	if err := persist(); err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
@@ -653,12 +644,12 @@ func (s *Server) applyPost(ctx khttp.Context) error {
 // ---- 运行 / 产物 ----
 
 func (s *Server) listRuns(ctx khttp.Context) error {
-	topic := ctx.Query().Get("topic")
+	subscription := ctx.Query().Get("subscription")
 	limit := 200 // 缺省上限(与前端列表一致)
 	if v, err := strconv.Atoi(ctx.Query().Get("limit")); err == nil && v > 0 {
 		limit = v
 	}
-	runs, err := s.d.Repo.ListRuns(ctx, topic, limit)
+	runs, err := s.d.Repo.ListRuns(ctx, subscription, limit)
 	if err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
@@ -680,32 +671,40 @@ func (s *Server) runDetail(ctx khttp.Context) error {
 	return writeJSON(ctx, http.StatusOK, rec)
 }
 
-// artifactNameRe 匹配产物文件名 <topic>-<日期>-<时间>.html,同时用于提取订阅主题。
+// artifactNameRe 匹配产物文件名 <订阅名>-<日期>-<时间>.html,同时用于提取订阅名。
 var artifactNameRe = regexp.MustCompile(`^(.+)-(\d{8}-\d{6})\.html$`)
 
-// artifactOut 是列表中的产物条目(附带解析出的订阅主题)。
+// artifactOut 是列表中的产物条目(附带所属空间、解析出的订阅名与产物 DSN)。
 type artifactOut struct {
 	artifact.File
-	Topic string `json:"topic"`
+	Space        string `json:"space"`        // 所属产物空间名
+	Subscription string `json:"subscription"` // 从文件名解析的订阅名(解析不出为空)
+	DSN          string `json:"dsn"`          // 产物路径:类型://空间名/分桶/文件名
 }
 
-// listArtifacts 列出产物空间全部文件(跨分桶,最新在前);?topic= 按订阅过滤。
+// listArtifacts 列出全部产物空间的文件(跨分桶,最新在前);?subscription= 按订阅
+// (文件名前缀)过滤,?space= 按空间过滤。
 func (s *Server) listArtifacts(ctx khttp.Context) error {
-	m := s.d.Artifacts()
-	if m == nil {
+	spaces := s.d.Artifacts()
+	if spaces == nil {
 		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("产物空间未就绪"))
 	}
-	files, err := m.List(ctx)
+	files, err := spaces.List(ctx)
 	if err != nil {
 		return apiError(ctx, http.StatusInternalServerError, err)
 	}
+	subFilter := ctx.Query().Get("subscription")
+	spaceFilter := ctx.Query().Get("space")
 	items := make([]artifactOut, 0, len(files))
 	for _, f := range files {
-		item := artifactOut{File: f}
-		if match := artifactNameRe.FindStringSubmatch(f.Name); match != nil {
-			item.Topic = match[1]
+		if spaceFilter != "" && f.Space != spaceFilter {
+			continue
 		}
-		if tf := ctx.Query().Get("topic"); tf != "" && item.Topic != tf {
+		item := artifactOut{File: f.File, Space: f.Space, DSN: artifact.DSN(spaces.Type(f.Space), f.Space, f.Bucket, f.Name)}
+		if match := artifactNameRe.FindStringSubmatch(f.Name); match != nil {
+			item.Subscription = match[1]
+		}
+		if subFilter != "" && item.Subscription != subFilter {
 			continue
 		}
 		items = append(items, item)
@@ -715,12 +714,12 @@ func (s *Server) listArtifacts(ctx khttp.Context) error {
 
 // artifactContent 读取一个产物文件(HTML 文档)。
 func (s *Server) artifactContent(ctx khttp.Context) error {
-	m := s.d.Artifacts()
-	if m == nil {
+	spaces := s.d.Artifacts()
+	if spaces == nil {
 		return apiError(ctx, http.StatusServiceUnavailable, fmt.Errorf("产物空间未就绪"))
 	}
-	bucket, name := ctxParam(ctx, "bucket"), ctxParam(ctx, "name")
-	raw, err := m.Read(ctx, bucket, name)
+	space, bucket, name := ctxParam(ctx, "space"), ctxParam(ctx, "bucket"), ctxParam(ctx, "name")
+	raw, err := spaces.Read(ctx, space, bucket, name)
 	if errors.Is(err, storage.ErrNotFound) {
 		return apiError(ctx, http.StatusNotFound, fmt.Errorf("产物不存在"))
 	}
@@ -728,18 +727,20 @@ func (s *Server) artifactContent(ctx khttp.Context) error {
 		return apiError(ctx, http.StatusBadRequest, err)
 	}
 	out := map[string]any{
+		"space":   space,
 		"bucket":  bucket,
 		"name":    name,
+		"dsn":     artifact.DSN(spaces.Type(space), space, bucket, name),
 		"content": string(raw),
 		"size":    len(raw),
 	}
-	if files, err := m.List(ctx); err == nil {
+	if files, err := spaces.List(ctx); err == nil {
 		for _, f := range files {
-			if f.Bucket == bucket && f.Name == name {
+			if f.Space == space && f.Bucket == bucket && f.Name == name {
 				out["size"] = f.Size
 				out["mod_time"] = f.ModTime
 				if match := artifactNameRe.FindStringSubmatch(name); match != nil {
-					out["topic"] = match[1]
+					out["subscription"] = match[1]
 				}
 				break
 			}

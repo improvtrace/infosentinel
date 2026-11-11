@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 )
 
 func TestWebpageTool(t *testing.T) {
@@ -19,8 +17,7 @@ func TestWebpageTool(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	collect := &repository.CollectConfig{HTTPTimeoutSec: 5, MaxBodyChars: 4000}
-	tk, err := NewWebpageTool(nil, collect)
+	tk, err := NewWebpageTool()
 	if err != nil {
 		t.Fatalf("NewWebpageTool: %v", err)
 	}
@@ -60,18 +57,5 @@ func TestWebpageTool(t *testing.T) {
 	}
 	if !strings.Contains(out, "must not be empty") {
 		t.Errorf("空 URL 应返回错误说明,得到 %s", out)
-	}
-}
-
-func TestDefaultWebpages(t *testing.T) {
-	got := DefaultWebpages([]repository.Webpage{
-		{Name: "Go Releases", URL: "https://go.dev/doc/devel/release"},
-		{URL: "https://example.com/no-name"},
-	})
-	if !strings.Contains(got, "Go Releases: https://go.dev/doc/devel/release") {
-		t.Errorf("命名页面缺失: %q", got)
-	}
-	if !strings.Contains(got, "https://example.com/no-name") {
-		t.Errorf("未命名页面应以 URL 展示: %q", got)
 	}
 }

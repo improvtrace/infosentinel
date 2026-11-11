@@ -52,9 +52,14 @@ func IDLTE(id int) predicate.Subscription {
 	return predicate.Subscription(sql.FieldLTE(FieldID, id))
 }
 
-// Topic applies equality check predicate on the "topic" field. It's identical to TopicEQ.
-func Topic(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldTopic, v))
+// Name applies equality check predicate on the "name" field. It's identical to NameEQ.
+func Name(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldName, v))
+}
+
+// Synthesis applies equality check predicate on the "synthesis" field. It's identical to SynthesisEQ.
+func Synthesis(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldSynthesis, v))
 }
 
 // Cron applies equality check predicate on the "cron" field. It's identical to CronEQ.
@@ -62,69 +67,139 @@ func Cron(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldCron, v))
 }
 
-// TopicEQ applies the EQ predicate on the "topic" field.
-func TopicEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldTopic, v))
+// Space applies equality check predicate on the "space" field. It's identical to SpaceEQ.
+func Space(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldSpace, v))
 }
 
-// TopicNEQ applies the NEQ predicate on the "topic" field.
-func TopicNEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNEQ(FieldTopic, v))
+// NameEQ applies the EQ predicate on the "name" field.
+func NameEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldName, v))
 }
 
-// TopicIn applies the In predicate on the "topic" field.
-func TopicIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldIn(FieldTopic, vs...))
+// NameNEQ applies the NEQ predicate on the "name" field.
+func NameNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldName, v))
 }
 
-// TopicNotIn applies the NotIn predicate on the "topic" field.
-func TopicNotIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotIn(FieldTopic, vs...))
+// NameIn applies the In predicate on the "name" field.
+func NameIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldName, vs...))
 }
 
-// TopicGT applies the GT predicate on the "topic" field.
-func TopicGT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGT(FieldTopic, v))
+// NameNotIn applies the NotIn predicate on the "name" field.
+func NameNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldName, vs...))
 }
 
-// TopicGTE applies the GTE predicate on the "topic" field.
-func TopicGTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGTE(FieldTopic, v))
+// NameGT applies the GT predicate on the "name" field.
+func NameGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldName, v))
 }
 
-// TopicLT applies the LT predicate on the "topic" field.
-func TopicLT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLT(FieldTopic, v))
+// NameGTE applies the GTE predicate on the "name" field.
+func NameGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldName, v))
 }
 
-// TopicLTE applies the LTE predicate on the "topic" field.
-func TopicLTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLTE(FieldTopic, v))
+// NameLT applies the LT predicate on the "name" field.
+func NameLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldName, v))
 }
 
-// TopicContains applies the Contains predicate on the "topic" field.
-func TopicContains(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContains(FieldTopic, v))
+// NameLTE applies the LTE predicate on the "name" field.
+func NameLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldName, v))
 }
 
-// TopicHasPrefix applies the HasPrefix predicate on the "topic" field.
-func TopicHasPrefix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasPrefix(FieldTopic, v))
+// NameContains applies the Contains predicate on the "name" field.
+func NameContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldName, v))
 }
 
-// TopicHasSuffix applies the HasSuffix predicate on the "topic" field.
-func TopicHasSuffix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasSuffix(FieldTopic, v))
+// NameHasPrefix applies the HasPrefix predicate on the "name" field.
+func NameHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldName, v))
 }
 
-// TopicEqualFold applies the EqualFold predicate on the "topic" field.
-func TopicEqualFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEqualFold(FieldTopic, v))
+// NameHasSuffix applies the HasSuffix predicate on the "name" field.
+func NameHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldName, v))
 }
 
-// TopicContainsFold applies the ContainsFold predicate on the "topic" field.
-func TopicContainsFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContainsFold(FieldTopic, v))
+// NameEqualFold applies the EqualFold predicate on the "name" field.
+func NameEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldName, v))
+}
+
+// NameContainsFold applies the ContainsFold predicate on the "name" field.
+func NameContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldName, v))
+}
+
+// SynthesisEQ applies the EQ predicate on the "synthesis" field.
+func SynthesisEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldSynthesis, v))
+}
+
+// SynthesisNEQ applies the NEQ predicate on the "synthesis" field.
+func SynthesisNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldSynthesis, v))
+}
+
+// SynthesisIn applies the In predicate on the "synthesis" field.
+func SynthesisIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldSynthesis, vs...))
+}
+
+// SynthesisNotIn applies the NotIn predicate on the "synthesis" field.
+func SynthesisNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldSynthesis, vs...))
+}
+
+// SynthesisGT applies the GT predicate on the "synthesis" field.
+func SynthesisGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldSynthesis, v))
+}
+
+// SynthesisGTE applies the GTE predicate on the "synthesis" field.
+func SynthesisGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldSynthesis, v))
+}
+
+// SynthesisLT applies the LT predicate on the "synthesis" field.
+func SynthesisLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldSynthesis, v))
+}
+
+// SynthesisLTE applies the LTE predicate on the "synthesis" field.
+func SynthesisLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldSynthesis, v))
+}
+
+// SynthesisContains applies the Contains predicate on the "synthesis" field.
+func SynthesisContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldSynthesis, v))
+}
+
+// SynthesisHasPrefix applies the HasPrefix predicate on the "synthesis" field.
+func SynthesisHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldSynthesis, v))
+}
+
+// SynthesisHasSuffix applies the HasSuffix predicate on the "synthesis" field.
+func SynthesisHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldSynthesis, v))
+}
+
+// SynthesisEqualFold applies the EqualFold predicate on the "synthesis" field.
+func SynthesisEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldSynthesis, v))
+}
+
+// SynthesisContainsFold applies the ContainsFold predicate on the "synthesis" field.
+func SynthesisContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldSynthesis, v))
 }
 
 // CronEQ applies the EQ predicate on the "cron" field.
@@ -190,6 +265,71 @@ func CronEqualFold(v string) predicate.Subscription {
 // CronContainsFold applies the ContainsFold predicate on the "cron" field.
 func CronContainsFold(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldContainsFold(FieldCron, v))
+}
+
+// SpaceEQ applies the EQ predicate on the "space" field.
+func SpaceEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldSpace, v))
+}
+
+// SpaceNEQ applies the NEQ predicate on the "space" field.
+func SpaceNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldSpace, v))
+}
+
+// SpaceIn applies the In predicate on the "space" field.
+func SpaceIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldSpace, vs...))
+}
+
+// SpaceNotIn applies the NotIn predicate on the "space" field.
+func SpaceNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldSpace, vs...))
+}
+
+// SpaceGT applies the GT predicate on the "space" field.
+func SpaceGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldSpace, v))
+}
+
+// SpaceGTE applies the GTE predicate on the "space" field.
+func SpaceGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldSpace, v))
+}
+
+// SpaceLT applies the LT predicate on the "space" field.
+func SpaceLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldSpace, v))
+}
+
+// SpaceLTE applies the LTE predicate on the "space" field.
+func SpaceLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldSpace, v))
+}
+
+// SpaceContains applies the Contains predicate on the "space" field.
+func SpaceContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldSpace, v))
+}
+
+// SpaceHasPrefix applies the HasPrefix predicate on the "space" field.
+func SpaceHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldSpace, v))
+}
+
+// SpaceHasSuffix applies the HasSuffix predicate on the "space" field.
+func SpaceHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldSpace, v))
+}
+
+// SpaceEqualFold applies the EqualFold predicate on the "space" field.
+func SpaceEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldSpace, v))
+}
+
+// SpaceContainsFold applies the ContainsFold predicate on the "space" field.
+func SpaceContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldSpace, v))
 }
 
 // And groups predicates with the AND operator between them.

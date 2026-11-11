@@ -7,6 +7,21 @@ import (
 	"strings"
 )
 
+// 采集通用参数(内置常量,无全局配置):信息源由主题提示词描述,
+// 工具只保留控制上下文长度、请求节奏与去重保留的必要参数。
+const (
+	// WindowHours 是内容时间窗:只保留最近 N 小时内发布/更新的条目(RSS/HN)。
+	WindowHours = 48
+	// MaxItemsPerSource 是单个工具单次返回的最大条目数,控制上下文长度。
+	MaxItemsPerSource = 15
+	// HTTPTimeoutSec 是采集请求的超时秒数。
+	HTTPTimeoutSec = 20
+	// MaxBodyChars 是单条网页正文的截断字符数。
+	MaxBodyChars = 4000
+	// DedupDays 是 URL 去重状态保留天数,超过则重新允许出现。
+	DedupDays = 7
+)
+
 // friendlyResult 把工具输出序列化为紧凑 JSON,供 LLM 阅读。
 // 工具的返回值始终走此函数,保证错误也能以结构化形式回传而不是中断 agent 循环。
 func friendlyResult(v any) string {

@@ -81,10 +81,10 @@ func BucketOf(t time.Time, periodDays int) string {
 	return time.Unix(int64(start)*86400, 0).UTC().Format("2006-01-02")
 }
 
-// Build 按全局配置构建产物空间管理器:映射 StorageConfig → 存储驱动参数。
+// Build 按单个产物空间配置构建管理器:映射 StorageSpace → 存储驱动参数。
 // localBaseDir 为本地磁盘根目录(来自引导配置 storage.base_dir);
 // password 为已解析的 SFTP/FTP 登录密码(本地驱动可空)。
-func Build(cfg *repository.StorageConfig, localBaseDir, password string) (*Manager, error) {
+func Build(cfg *repository.StorageSpace, localBaseDir, password string) (*Manager, error) {
 	scfg := storage.Config{Type: cfg.Type, Password: password}
 	switch cfg.Type {
 	case repository.StorageTypeLocal:
@@ -115,7 +115,7 @@ func Build(cfg *repository.StorageConfig, localBaseDir, password string) (*Manag
 	})
 }
 
-// Save 写入一个产物文件,返回相对路径(<bucket>/<name> 或 <path>/<bucket>/<name>)。
+// Save 写入一个产物文件,返回所在分桶名(周期起始日期)。
 // 首次写入某个新分桶时按保留策略清理最旧的分桶。
 func (m *Manager) Save(ctx context.Context, name string, data []byte) (string, error) {
 	clean, err := storage.CleanRel(name)
@@ -126,17 +126,16 @@ func (m *Manager) Save(ctx context.Context, name string, data []byte) (string, e
 		return "", fmt.Errorf("产物名必须是单级文件名: %q", name)
 	}
 	bucket := BucketOf(time.Now(), m.periodDays)
-	rel := path.Join(m.path, bucket, clean)
-	if err := m.store.Save(ctx, rel, data); err != nil {
+	if err := m.store.Save(ctx, path.Join(m.path, bucket, clean), data); err != nil {
 		return "", err
 	}
 	if bucket != m.lastBucket {
 		m.lastBucket = bucket
 		if err := m.prune(ctx, bucket); err != nil {
-			return rel, fmt.Errorf("产物已保存,但清理旧分桶失败: %w", err)
+			return bucket, fmt.Errorf("产物已保存,但清理旧分桶失败: %w", err)
 		}
 	}
-	return rel, nil
+	return bucket, nil
 }
 
 // List 列出产物空间全部文件(跨分桶,最新修改在前)。
@@ -223,4 +222,102 @@ func (m *Manager) prune(ctx context.Context, keep string) error {
 // isNotFound 判断错误是否为路径不存在。
 func isNotFound(err error) bool {
 	return errors.Is(err, storage.ErrNotFound)
+}
+
+// ---- 多产物空间 ----
+
+// SpaceFile 是一个产物文件(附带所属空间名)。
+type SpaceFile struct {
+	File
+	Space string `json:"space"` // 所属空间名
+}
+
+// Spaces 是产物空间集合:容纳全局配置的多个空间(按配置顺序),
+// 订阅按名引用其中之一;支持跨空间列举与按空间读取。
+type Spaces struct {
+	names    []string
+	managers map[string]*Manager
+	types    map[string]string // 空间名 → 驱动类型(供 DSN 前缀)
+}
+
+// NewSpaces 创建空集合。
+func NewSpaces() *Spaces {
+	return &Spaces{managers: map[string]*Manager{}, types: map[string]string{}}
+}
+
+// Add 登记一个空间;同名后到者忽略(配置校验已保证唯一)。
+func (s *Spaces) Add(space *repository.StorageSpace, m *Manager) {
+	if _, ok := s.managers[space.Name]; ok {
+		return
+	}
+	s.names = append(s.names, space.Name)
+	s.managers[space.Name] = m
+	s.types[space.Name] = space.Type
+}
+
+// Len 返回空间数。
+func (s *Spaces) Len() int { return len(s.names) }
+
+// Names 按配置顺序返回全部空间名。
+func (s *Spaces) Names() []string {
+	out := make([]string, len(s.names))
+	copy(out, s.names)
+	return out
+}
+
+// Manager 返回指定空间的管理器;不存在时 ok 为 false。
+func (s *Spaces) Manager(name string) (*Manager, bool) {
+	m, ok := s.managers[name]
+	return m, ok
+}
+
+// Type 返回指定空间的驱动类型;不存在返回空串。
+func (s *Spaces) Type(name string) string { return s.types[name] }
+
+// List 列出全部空间的文件(空间按配置顺序,空间内最新在前;跨空间按修改时间倒序)。
+func (s *Spaces) List(ctx context.Context) ([]SpaceFile, error) {
+	out := make([]SpaceFile, 0, 16)
+	for _, name := range s.names {
+		files, err := s.managers[name].List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("列出产物空间 %s: %w", name, err)
+		}
+		for _, f := range files {
+			out = append(out, SpaceFile{File: f, Space: name})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ModTime.After(out[j].ModTime) })
+	return out, nil
+}
+
+// Read 读取指定空间的一个产物文件。
+func (s *Spaces) Read(ctx context.Context, space, bucket, name string) ([]byte, error) {
+	m, ok := s.managers[space]
+	if !ok {
+		return nil, fmt.Errorf("产物空间 %q 不存在: %w", space, storage.ErrNotFound)
+	}
+	return m.Read(ctx, bucket, name)
+}
+
+// ---- 产物 DSN ----
+// 产物路径采用 DSN 风格引用:<类型>://<空间名>/<分桶>/<文件名>,
+// 如 local://默认空间/2026-11-11/ai-agent-20261111-080000.html,
+// 可唯一定位到某空间的某个文件(空间名解析回全局配置)。
+
+// DSN 构造产物路径引用。
+func DSN(spaceType, space, bucket, name string) string {
+	return fmt.Sprintf("%s://%s/%s/%s", spaceType, space, bucket, name)
+}
+
+// ParseDSN 解析产物 DSN 为空间名、分桶与文件名;格式非法返回错误。
+func ParseDSN(dsn string) (space, bucket, name string, err error) {
+	scheme, rest, ok := strings.Cut(dsn, "://")
+	if !ok || scheme == "" {
+		return "", "", "", fmt.Errorf("产物路径 %q 不是 DSN 格式(类型://空间名/分桶/文件名)", dsn)
+	}
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", "", "", fmt.Errorf("产物路径 %q 不是 DSN 格式(类型://空间名/分桶/文件名)", dsn)
+	}
+	return parts[0], parts[1], parts[2], nil
 }

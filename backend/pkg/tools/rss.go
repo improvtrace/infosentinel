@@ -10,8 +10,6 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-
-	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 )
 
 // RSSItem 是返回给 LLM 的单条 RSS 内容。
@@ -25,13 +23,12 @@ type RSSItem struct {
 
 // rssToolParams 是 fetch_rss 工具的参数。
 type rssToolParams struct {
-	// Feed 是要拉取的源名称;留空表示依次拉取所有已配置的源
-	Feed string `json:"feed,omitempty" jsonschema_description:"name of the RSS feed to fetch; omit to fetch all configured feeds"`
+	// URL 是要拉取的 RSS/Atom 订阅源地址
+	URL string `json:"url" jsonschema_description:"full URL of the RSS/Atom feed to fetch"`
 }
 
 // rssTool 持有 fetch_rss 工具的依赖。
 type rssTool struct {
-	feeds    []repository.RSSFeed
 	client   *http.Client
 	window   time.Duration
 	maxItems int
@@ -39,61 +36,36 @@ type rssTool struct {
 	nowFn    func() time.Time
 }
 
-// NewRSSTool 创建 fetch_rss 工具:拉取配置的 RSS/Atom 订阅源,
-// 按时间窗与去重状态过滤后返回条目列表。
-func NewRSSTool(cfg *repository.RSSConfig, collect *repository.CollectConfig, store *SeenStore) (tool.InvokableTool, error) {
+// NewRSSTool 创建 fetch_rss 工具:拉取指定 RSS/Atom 订阅源地址,
+// 按时间窗与去重状态过滤后返回条目列表;源地址由主题提示词描述、LLM 传入。
+func NewRSSTool(store *SeenStore) (tool.InvokableTool, error) {
 	t := &rssTool{
-		feeds:    cfg.Feeds,
-		client:   &http.Client{Timeout: time.Duration(collect.HTTPTimeoutSec) * time.Second},
-		window:   time.Duration(collect.WindowHours) * time.Hour,
-		maxItems: collect.MaxItemsPerSource,
+		client:   &http.Client{Timeout: HTTPTimeoutSec * time.Second},
+		window:   WindowHours * time.Hour,
+		maxItems: MaxItemsPerSource,
 		store:    store,
 		nowFn:    time.Now,
 	}
 	return utils.InferTool(
 		"fetch_rss",
-		"Fetch recent articles from the configured RSS/Atom feeds. "+
+		"Fetch recent articles from an RSS/Atom feed URL. "+
 			"Returns articles published within the time window that have not been reported before. "+
-			"Pass feed name to fetch one specific feed, or omit to fetch all feeds.",
+			"Fetch the feed URLs given in the topic instructions.",
 		t.invoke,
 	)
 }
 
 // invoke 执行 RSS 拉取与过滤。
 func (t *rssTool) invoke(ctx context.Context, params *rssToolParams) (string, error) {
-	now := t.nowFn()
-	targets := t.feeds
-	if params.Feed != "" {
-		targets = nil
-		for _, f := range t.feeds {
-			if f.Name == params.Feed {
-				targets = []repository.RSSFeed{f}
-				break
-			}
-		}
-		if targets == nil {
-			return friendlyResult(map[string]any{
-				"error": fmt.Sprintf("feed %q not found; call this tool without arguments to see all configured feeds", params.Feed),
-			}), nil
-		}
+	if params.URL == "" {
+		return friendlyResult(map[string]any{"error": "url must not be empty"}), nil
 	}
-
-	items := make([]RSSItem, 0, t.maxItems)
-	for _, f := range targets {
-		got, err := t.fetchOne(ctx, f, now)
-		if err != nil {
-			// 单个源失败不影响其他源:错误信息返回给 LLM,由其自行取舍
-			items = append(items, RSSItem{
-				Feed: f.Name, Link: f.URL,
-				Summary: fmt.Sprintf("[feed error: %v]", err),
-			})
-			continue
-		}
-		items = append(items, got...)
-		if len(items) >= t.maxItems {
-			items = items[:t.maxItems]
-			break
-		}
+	items, err := t.fetchOne(ctx, params.URL, t.nowFn())
+	if err != nil {
+		// 失败信息返回给 LLM,由其自行取舍而不是中断 agent 循环
+		return friendlyResult(map[string]any{
+			"error": fmt.Sprintf("fetch %s failed: %v", params.URL, err),
+		}), nil
 	}
 	if len(items) == 0 {
 		return friendlyResult(map[string]any{"items": []RSSItem{}, "note": "no new articles within the time window"}), nil
@@ -102,8 +74,8 @@ func (t *rssTool) invoke(ctx context.Context, params *rssToolParams) (string, er
 }
 
 // fetchOne 拉取单个订阅源并完成时间窗与去重过滤。
-func (t *rssTool) fetchOne(ctx context.Context, f repository.RSSFeed, now time.Time) ([]RSSItem, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
+func (t *rssTool) fetchOne(ctx context.Context, feedURL string, now time.Time) ([]RSSItem, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("构造请求: %w", err)
 	}
@@ -123,6 +95,11 @@ func (t *rssTool) fetchOne(ctx context.Context, f repository.RSSFeed, now time.T
 	if err != nil {
 		return nil, fmt.Errorf("解析 feed: %w", err)
 	}
+	// 条目归属用源的自述标题,缺失时退回 URL
+	feedName := feed.Title
+	if feedName == "" {
+		feedName = feedURL
+	}
 
 	cutoff := now.Add(-t.window)
 	out := make([]RSSItem, 0, len(feed.Items))
@@ -136,13 +113,13 @@ func (t *rssTool) fetchOne(ctx context.Context, f repository.RSSFeed, now time.T
 		if it.PublishedParsed != nil && !it.PublishedParsed.IsZero() && it.PublishedParsed.Before(cutoff) {
 			continue
 		}
-		// 去重:本轮已进入过邮件的链接不再返回
+		// 去重:本轮已进入过报告的链接不再返回
 		if len(t.store.Filter([]string{link})) == 0 {
 			continue
 		}
 		links = append(links, link)
 		out = append(out, RSSItem{
-			Feed:      f.Name,
+			Feed:      feedName,
 			Title:     it.Title,
 			Link:      link,
 			Published: formatTimePtr(it.PublishedParsed),

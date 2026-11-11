@@ -54,9 +54,9 @@ func IDLTE(id int) predicate.SubscriptionRun {
 	return predicate.SubscriptionRun(sql.FieldLTE(FieldID, id))
 }
 
-// Topic applies equality check predicate on the "topic" field. It's identical to TopicEQ.
-func Topic(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldEQ(FieldTopic, v))
+// Subscription applies equality check predicate on the "subscription" field. It's identical to SubscriptionEQ.
+func Subscription(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldEQ(FieldSubscription, v))
 }
 
 // Trigger applies equality check predicate on the "trigger" field. It's identical to TriggerEQ.
@@ -99,69 +99,69 @@ func Body(v string) predicate.SubscriptionRun {
 	return predicate.SubscriptionRun(sql.FieldEQ(FieldBody, v))
 }
 
-// TopicEQ applies the EQ predicate on the "topic" field.
-func TopicEQ(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldEQ(FieldTopic, v))
+// SubscriptionEQ applies the EQ predicate on the "subscription" field.
+func SubscriptionEQ(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldEQ(FieldSubscription, v))
 }
 
-// TopicNEQ applies the NEQ predicate on the "topic" field.
-func TopicNEQ(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldNEQ(FieldTopic, v))
+// SubscriptionNEQ applies the NEQ predicate on the "subscription" field.
+func SubscriptionNEQ(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldNEQ(FieldSubscription, v))
 }
 
-// TopicIn applies the In predicate on the "topic" field.
-func TopicIn(vs ...string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldIn(FieldTopic, vs...))
+// SubscriptionIn applies the In predicate on the "subscription" field.
+func SubscriptionIn(vs ...string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldIn(FieldSubscription, vs...))
 }
 
-// TopicNotIn applies the NotIn predicate on the "topic" field.
-func TopicNotIn(vs ...string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldNotIn(FieldTopic, vs...))
+// SubscriptionNotIn applies the NotIn predicate on the "subscription" field.
+func SubscriptionNotIn(vs ...string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldNotIn(FieldSubscription, vs...))
 }
 
-// TopicGT applies the GT predicate on the "topic" field.
-func TopicGT(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldGT(FieldTopic, v))
+// SubscriptionGT applies the GT predicate on the "subscription" field.
+func SubscriptionGT(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldGT(FieldSubscription, v))
 }
 
-// TopicGTE applies the GTE predicate on the "topic" field.
-func TopicGTE(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldGTE(FieldTopic, v))
+// SubscriptionGTE applies the GTE predicate on the "subscription" field.
+func SubscriptionGTE(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldGTE(FieldSubscription, v))
 }
 
-// TopicLT applies the LT predicate on the "topic" field.
-func TopicLT(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldLT(FieldTopic, v))
+// SubscriptionLT applies the LT predicate on the "subscription" field.
+func SubscriptionLT(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldLT(FieldSubscription, v))
 }
 
-// TopicLTE applies the LTE predicate on the "topic" field.
-func TopicLTE(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldLTE(FieldTopic, v))
+// SubscriptionLTE applies the LTE predicate on the "subscription" field.
+func SubscriptionLTE(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldLTE(FieldSubscription, v))
 }
 
-// TopicContains applies the Contains predicate on the "topic" field.
-func TopicContains(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldContains(FieldTopic, v))
+// SubscriptionContains applies the Contains predicate on the "subscription" field.
+func SubscriptionContains(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldContains(FieldSubscription, v))
 }
 
-// TopicHasPrefix applies the HasPrefix predicate on the "topic" field.
-func TopicHasPrefix(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldHasPrefix(FieldTopic, v))
+// SubscriptionHasPrefix applies the HasPrefix predicate on the "subscription" field.
+func SubscriptionHasPrefix(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldHasPrefix(FieldSubscription, v))
 }
 
-// TopicHasSuffix applies the HasSuffix predicate on the "topic" field.
-func TopicHasSuffix(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldHasSuffix(FieldTopic, v))
+// SubscriptionHasSuffix applies the HasSuffix predicate on the "subscription" field.
+func SubscriptionHasSuffix(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldHasSuffix(FieldSubscription, v))
 }
 
-// TopicEqualFold applies the EqualFold predicate on the "topic" field.
-func TopicEqualFold(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldEqualFold(FieldTopic, v))
+// SubscriptionEqualFold applies the EqualFold predicate on the "subscription" field.
+func SubscriptionEqualFold(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldEqualFold(FieldSubscription, v))
 }
 
-// TopicContainsFold applies the ContainsFold predicate on the "topic" field.
-func TopicContainsFold(v string) predicate.SubscriptionRun {
-	return predicate.SubscriptionRun(sql.FieldContainsFold(FieldTopic, v))
+// SubscriptionContainsFold applies the ContainsFold predicate on the "subscription" field.
+func SubscriptionContainsFold(v string) predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldContainsFold(FieldSubscription, v))
 }
 
 // TriggerEQ applies the EQ predicate on the "trigger" field.
@@ -617,6 +617,16 @@ func BodyEqualFold(v string) predicate.SubscriptionRun {
 // BodyContainsFold applies the ContainsFold predicate on the "body" field.
 func BodyContainsFold(v string) predicate.SubscriptionRun {
 	return predicate.SubscriptionRun(sql.FieldContainsFold(FieldBody, v))
+}
+
+// ArtifactsIsNil applies the IsNil predicate on the "artifacts" field.
+func ArtifactsIsNil() predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldIsNull(FieldArtifacts))
+}
+
+// ArtifactsNotNil applies the NotNil predicate on the "artifacts" field.
+func ArtifactsNotNil() predicate.SubscriptionRun {
+	return predicate.SubscriptionRun(sql.FieldNotNull(FieldArtifacts))
 }
 
 // And groups predicates with the AND operator between them.

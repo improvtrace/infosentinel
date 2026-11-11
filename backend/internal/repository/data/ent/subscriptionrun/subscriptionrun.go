@@ -11,8 +11,8 @@ const (
 	Label = "subscription_run"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
-	// FieldTopic holds the string denoting the topic field in the database.
-	FieldTopic = "topic"
+	// FieldSubscription holds the string denoting the subscription field in the database.
+	FieldSubscription = "subscription"
 	// FieldTrigger holds the string denoting the trigger field in the database.
 	FieldTrigger = "trigger"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -29,6 +29,8 @@ const (
 	FieldSubject = "subject"
 	// FieldBody holds the string denoting the body field in the database.
 	FieldBody = "body"
+	// FieldArtifacts holds the string denoting the artifacts field in the database.
+	FieldArtifacts = "artifacts"
 	// Table holds the table name of the subscriptionrun in the database.
 	Table = "subscription_runs"
 )
@@ -36,7 +38,7 @@ const (
 // Columns holds all SQL columns for subscriptionrun fields.
 var Columns = []string{
 	FieldID,
-	FieldTopic,
+	FieldSubscription,
 	FieldTrigger,
 	FieldStatus,
 	FieldStartedAt,
@@ -45,6 +47,7 @@ var Columns = []string{
 	FieldError,
 	FieldSubject,
 	FieldBody,
+	FieldArtifacts,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -58,8 +61,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
-	// TopicValidator is a validator for the "topic" field. It is called by the builders before save.
-	TopicValidator func(string) error
+	// SubscriptionValidator is a validator for the "subscription" field. It is called by the builders before save.
+	SubscriptionValidator func(string) error
 	// TriggerValidator is a validator for the "trigger" field. It is called by the builders before save.
 	TriggerValidator func(string) error
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
@@ -82,9 +85,9 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
 }
 
-// ByTopic orders the results by the topic field.
-func ByTopic(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTopic, opts...).ToFunc()
+// BySubscription orders the results by the subscription field.
+func BySubscription(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscription, opts...).ToFunc()
 }
 
 // ByTrigger orders the results by the trigger field.

@@ -15,13 +15,16 @@ export interface Target {
 }
 
 export interface Subscription {
-  topic: string
+  name: string
+  topics: string[] // 关联的主题名,可多个(一个主题可被多个订阅引用)
+  synthesis: string // 合成提示词:多主题报告合并指令
   cron: string
-  targets: string[]
+  targets: string[] // 推送目标名,可多个
+  space: string // 产物空间名(单个;空 = 不写产物空间)
 }
 
 export interface NextRun {
-  topic: string
+  subscription: string
   cron: string
   next: string
 }
@@ -30,7 +33,7 @@ export type RunStatus = 'running' | 'success' | 'failed'
 
 export interface RunRecord {
   id: number
-  topic: string
+  subscription: string
   trigger: string
   status: RunStatus
   started_at: string
@@ -39,6 +42,7 @@ export interface RunRecord {
   error: string
   subject: string
   body: string
+  artifacts: string[] // 产物路径(DSN 格式:类型://空间名/分桶/文件名)
 }
 
 export interface LLMConfig {
@@ -79,13 +83,18 @@ export interface StorageFTP {
   tls: boolean
 }
 
-export interface StorageConfig {
+export interface StorageSpace {
+  name: string
   type: string // local | sftp | ftp
   path: string
   period_days: number
   max_dirs: number
   sftp: StorageSFTP
   ftp: StorageFTP
+}
+
+export interface StorageConfig {
+  spaces: StorageSpace[]
 }
 
 export interface ServerConfig {
@@ -101,11 +110,13 @@ export interface Settings {
 }
 
 export interface ArtifactFile {
+  space: string
   bucket: string
   name: string
   size: number
   mod_time: string
-  topic?: string
+  subscription?: string
+  dsn?: string
 }
 
 export interface ArtifactContent extends ArtifactFile {
@@ -142,7 +153,6 @@ export interface ListResp<T> {
 
 export interface Config {
   database: { path: string }
-  sources: Sources
   topics: Topic[]
   targets: Target[]
   subscriptions: Subscription[]
@@ -152,17 +162,6 @@ export interface Config {
   storage: StorageConfig
 }
 
-export interface Sources {
-  collect: {
-    window_hours: number
-    max_items_per_source: number
-    http_timeout_sec: number
-    max_body_chars: number
-    dedup_days: number
-  }
-  rss: { enabled: boolean; feeds: { name: string; url: string }[] }
-  search: { enabled: boolean; region: string; max_results: number }
-  hackernews: { enabled: boolean; top_n: number; min_points: number }
-  github_trending: { enabled: boolean; language: string; top_n: number }
-  webpages: { name: string; url: string }[]
-}
+// 合成提示词默认值(与后端 repository.DefaultSynthesis 保持一致,新建订阅时预填)
+export const DEFAULT_SYNTHESIS =
+  '你是资讯编辑。请把多份主题报告合并为一份最终报告:去除重复与冗余,按主题分节或按重要性排序,保留每条的原文链接与一句话摘要,开头用一段导语概括本期整体看点。第一行只写总标题纯文本;从第二行起用中文 HTML 片段撰写正文(<section>/<h2>/<p>/<ul>/<table> 等内容级标签,不含 <html>/<body>/<style>/<script>),链接用 <a> 标签原样保留。'

@@ -262,12 +262,12 @@ func (_q *SubscriptionRunQuery) Clone() *SubscriptionRunQuery {
 // Example:
 //
 //	var v []struct {
-//		Topic string `json:"topic,omitempty"`
+//		Subscription string `json:"subscription,omitempty"`
 //		Count int `json:"count,omitempty"`
 //	}
 //
 //	client.SubscriptionRun.Query().
-//		GroupBy(subscriptionrun.FieldTopic).
+//		GroupBy(subscriptionrun.FieldSubscription).
 //		Aggregate(ent.Count()).
 //		Scan(ctx, &v)
 func (_q *SubscriptionRunQuery) GroupBy(field string, fields ...string) *SubscriptionRunGroupBy {
@@ -285,11 +285,11 @@ func (_q *SubscriptionRunQuery) GroupBy(field string, fields ...string) *Subscri
 // Example:
 //
 //	var v []struct {
-//		Topic string `json:"topic,omitempty"`
+//		Subscription string `json:"subscription,omitempty"`
 //	}
 //
 //	client.SubscriptionRun.Query().
-//		Select(subscriptionrun.FieldTopic).
+//		Select(subscriptionrun.FieldSubscription).
 //		Scan(ctx, &v)
 func (_q *SubscriptionRunQuery) Select(fields ...string) *SubscriptionRunSelect {
 	_q.ctx.Fields = append(_q.ctx.Fields, fields...)

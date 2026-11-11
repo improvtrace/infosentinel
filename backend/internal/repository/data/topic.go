@@ -7,7 +7,6 @@ import (
 
 	"github.com/tomasgdl/infosentinel/backend/internal/repository"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent"
-	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/subscription"
 	"github.com/tomasgdl/infosentinel/backend/internal/repository/data/ent/topic"
 )
 
@@ -53,14 +52,14 @@ func (d *Data) UpsertTopic(ctx context.Context, t repository.Topic) error {
 
 // DeleteTopic 实现 repository.TopicRepository:已有订阅时拒绝。
 func (d *Data) DeleteTopic(ctx context.Context, name string) error {
-	n, err := d.client.Subscription.Query().Where(subscription.Topic(name)).Count(ctx)
+	subs, err := d.subscriptionsUsingTopic(ctx, name)
 	if err != nil {
-		return fmt.Errorf("查询主题引用: %w", err)
+		return err
 	}
-	if n > 0 {
-		return fmt.Errorf("主题 %q 已被订阅引用;请先在订阅管理中删除对应订阅", name)
+	if len(subs) > 0 {
+		return fmt.Errorf("主题 %q 已被订阅引用:%s;请先在订阅管理中移除关联或删除对应订阅", name, joinNames(subs))
 	}
-	n, err = d.client.Topic.Delete().Where(topic.Name(name)).Exec(ctx)
+	n, err := d.client.Topic.Delete().Where(topic.Name(name)).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -70,9 +69,32 @@ func (d *Data) DeleteTopic(ctx context.Context, name string) error {
 	return nil
 }
 
-// UsedByTopic 实现 repository.TopicRepository:引用该主题的订阅数。
+// UsedByTopic 实现 repository.TopicRepository:引用该主题的订阅数(多对多,扫描数组)。
 func (d *Data) UsedByTopic(ctx context.Context, name string) (int, error) {
-	return d.client.Subscription.Query().Where(subscription.Topic(name)).Count(ctx)
+	subs, err := d.subscriptionsUsingTopic(ctx, name)
+	if err != nil {
+		return 0, err
+	}
+	return len(subs), nil
+}
+
+// subscriptionsUsingTopic 扫描订阅并统计 topics JSON 中引用该主题的订阅名称列表。
+func (d *Data) subscriptionsUsingTopic(ctx context.Context, name string) ([]string, error) {
+	subs, err := d.ListSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, s := range subs {
+		for _, ref := range s.Topics {
+			if ref == name {
+				out = append(out, s.Name)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 var _ repository.TopicRepository = (*Data)(nil)

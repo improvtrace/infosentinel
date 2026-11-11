@@ -52,42 +52,50 @@ func init() {
 	setting.ValueValidator = settingDescValue.Validators[0].(func(string) error)
 	subscriptionFields := schema.Subscription{}.Fields()
 	_ = subscriptionFields
-	// subscriptionDescTopic is the schema descriptor for topic field.
-	subscriptionDescTopic := subscriptionFields[0].Descriptor()
-	// subscription.TopicValidator is a validator for the "topic" field. It is called by the builders before save.
-	subscription.TopicValidator = func() func(string) error {
-		validators := subscriptionDescTopic.Validators
+	// subscriptionDescName is the schema descriptor for name field.
+	subscriptionDescName := subscriptionFields[0].Descriptor()
+	// subscription.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	subscription.NameValidator = func() func(string) error {
+		validators := subscriptionDescName.Validators
 		fns := [...]func(string) error{
 			validators[0].(func(string) error),
 			validators[1].(func(string) error),
 		}
-		return func(topic string) error {
+		return func(name string) error {
 			for _, fn := range fns {
-				if err := fn(topic); err != nil {
+				if err := fn(name); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 	}()
+	// subscriptionDescSynthesis is the schema descriptor for synthesis field.
+	subscriptionDescSynthesis := subscriptionFields[2].Descriptor()
+	// subscription.SynthesisValidator is a validator for the "synthesis" field. It is called by the builders before save.
+	subscription.SynthesisValidator = subscriptionDescSynthesis.Validators[0].(func(string) error)
 	// subscriptionDescCron is the schema descriptor for cron field.
-	subscriptionDescCron := subscriptionFields[1].Descriptor()
+	subscriptionDescCron := subscriptionFields[3].Descriptor()
 	// subscription.CronValidator is a validator for the "cron" field. It is called by the builders before save.
 	subscription.CronValidator = subscriptionDescCron.Validators[0].(func(string) error)
+	// subscriptionDescSpace is the schema descriptor for space field.
+	subscriptionDescSpace := subscriptionFields[5].Descriptor()
+	// subscription.DefaultSpace holds the default value on creation for the space field.
+	subscription.DefaultSpace = subscriptionDescSpace.Default.(string)
 	subscriptionrunFields := schema.SubscriptionRun{}.Fields()
 	_ = subscriptionrunFields
-	// subscriptionrunDescTopic is the schema descriptor for topic field.
-	subscriptionrunDescTopic := subscriptionrunFields[0].Descriptor()
-	// subscriptionrun.TopicValidator is a validator for the "topic" field. It is called by the builders before save.
-	subscriptionrun.TopicValidator = func() func(string) error {
-		validators := subscriptionrunDescTopic.Validators
+	// subscriptionrunDescSubscription is the schema descriptor for subscription field.
+	subscriptionrunDescSubscription := subscriptionrunFields[0].Descriptor()
+	// subscriptionrun.SubscriptionValidator is a validator for the "subscription" field. It is called by the builders before save.
+	subscriptionrun.SubscriptionValidator = func() func(string) error {
+		validators := subscriptionrunDescSubscription.Validators
 		fns := [...]func(string) error{
 			validators[0].(func(string) error),
 			validators[1].(func(string) error),
 		}
-		return func(topic string) error {
+		return func(subscription string) error {
 			for _, fn := range fns {
-				if err := fn(topic); err != nil {
+				if err := fn(subscription); err != nil {
 					return err
 				}
 			}

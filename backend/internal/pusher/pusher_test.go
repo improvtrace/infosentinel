@@ -20,8 +20,8 @@ func mailerCfg(mode string) *repository.MailerConfig {
 	return &repository.MailerConfig{Type: mode}
 }
 
-// newTestArtifacts 在临时目录上构建本地产物空间。
-func newTestArtifacts(t *testing.T) *artifact.Manager {
+// newTestArtifacts 在临时目录上构建含单个本地产物空间的集合。
+func newTestArtifacts(t *testing.T) *artifact.Spaces {
 	t.Helper()
 	store, err := storage.New(storage.Config{Type: storage.TypeLocal, Root: t.TempDir()})
 	if err != nil {
@@ -31,26 +31,29 @@ func newTestArtifacts(t *testing.T) *artifact.Manager {
 	if err != nil {
 		t.Fatalf("创建产物空间: %v", err)
 	}
-	return m
+	spaces := artifact.NewSpaces()
+	space := &repository.StorageSpace{Name: "默认空间", Type: repository.StorageTypeLocal}
+	spaces.Add(space, m)
+	return spaces
 }
 
 func TestEmailPusherInbox(t *testing.T) {
 	arts := newTestArtifacts(t)
-	p, err := New(emailTarget("mailbox", "me@example.com"), mailerCfg(repository.MailerTypeInbox), "", arts)
+	p, err := New(emailTarget("mailbox", "me@example.com"), mailerCfg(repository.MailerTypeInbox), "", arts, "默认空间")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	rel, err := p.Push(context.Background(), &Message{
-		Topic:   "ai-agent",
-		Subject: "今日看点",
-		Body:    "## Go\n- 新版本发布\n",
+	res, err := p.Push(context.Background(), &Message{
+		Subscription: "ai-agent",
+		Subject:      "今日看点",
+		Body:         "## Go\n- 新版本发布\n",
 	})
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
-	// 产物写入分桶子目录,文件名为 <topic>-<时间戳>.html
+	// 产物写入分桶子目录,文件名为 <订阅名>-<时间戳>.html
 	files, err := arts.List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -59,15 +62,27 @@ func TestEmailPusherInbox(t *testing.T) {
 		t.Fatalf("应生成 1 个产物文件,得到 %d", len(files))
 	}
 	f := files[0]
-	// 结果描述应包含分桶与产物名
-	if !strings.Contains(rel, f.Bucket) || !strings.Contains(rel, f.Name) {
-		t.Errorf("Push 结果 %q 应包含分桶 %s 与产物名 %s", rel, f.Bucket, f.Name)
+	// 结果应携带产物 DSN(类型://空间名/分桶/文件名),描述包含 DSN
+	if len(res.Artifacts) != 1 {
+		t.Fatalf("站内信推送应返回 1 条产物 DSN,得到 %v", res.Artifacts)
+	}
+	dsn := res.Artifacts[0]
+	want := artifact.DSN(repository.StorageTypeLocal, "默认空间", f.Bucket, f.Name)
+	if dsn != want {
+		t.Errorf("DSN = %q,期望 %q", dsn, want)
+	}
+	space, bucket, name, perr := artifact.ParseDSN(dsn)
+	if perr != nil || space != "默认空间" || bucket != f.Bucket || name != f.Name {
+		t.Errorf("ParseDSN(%q) = (%q,%q,%q,%v)", dsn, space, bucket, name, perr)
+	}
+	if !strings.Contains(res.Detail, dsn) {
+		t.Errorf("Push 描述 %q 应包含 DSN %q", res.Detail, dsn)
 	}
 	if !strings.HasPrefix(f.Name, "ai-agent-") || !strings.HasSuffix(f.Name, ".html") {
-		t.Errorf("文件名应含订阅主题且为 html: %q", f.Name)
+		t.Errorf("文件名应含订阅名且为 html: %q", f.Name)
 	}
 
-	raw, err := arts.Read(context.Background(), f.Bucket, f.Name)
+	raw, err := arts.Read(context.Background(), "默认空间", f.Bucket, f.Name)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -85,11 +100,28 @@ func TestEmailPusherInbox(t *testing.T) {
 	}
 }
 
+func TestEmailPusherInboxRequiresSpace(t *testing.T) {
+	arts := newTestArtifacts(t)
+	// 未关联产物空间 → 明确报错
+	p, _ := New(emailTarget("m", "a@b.c"), mailerCfg(repository.MailerTypeInbox), "", arts, "")
+	_, err := p.Push(context.Background(), &Message{Subscription: "t", Subject: "s", Body: "b"})
+	if err == nil || !strings.Contains(err.Error(), "未关联产物空间") {
+		t.Errorf("未关联空间应返回配置引导错误,得到 %v", err)
+	}
+
+	// 关联了不存在的空间 → 明确报错
+	p, _ = New(emailTarget("m", "a@b.c"), mailerCfg(repository.MailerTypeInbox), "", arts, "ghost")
+	_, err = p.Push(context.Background(), &Message{Subscription: "t", Subject: "s", Body: "b"})
+	if err == nil || !strings.Contains(err.Error(), "不存在") {
+		t.Errorf("引用不存在空间应报错,得到 %v", err)
+	}
+}
+
 func TestSMTPConfigErrors(t *testing.T) {
 	arts := newTestArtifacts(t)
 	// 未配置 host/from → 明确报错
-	p, _ := New(emailTarget("m", "a@b.c"), mailerCfg(repository.MailerTypeSMTP), "", arts)
-	_, err := p.Push(context.Background(), &Message{Topic: "t", Subject: "s", Body: "b"})
+	p, _ := New(emailTarget("m", "a@b.c"), mailerCfg(repository.MailerTypeSMTP), "", arts, "")
+	_, err := p.Push(context.Background(), &Message{Subscription: "t", Subject: "s", Body: "b"})
 	if err == nil || !strings.Contains(err.Error(), "host 与发件人地址") {
 		t.Errorf("未配置 SMTP 应返回配置错误,得到 %v", err)
 	}
@@ -97,8 +129,8 @@ func TestSMTPConfigErrors(t *testing.T) {
 	// 已配置 host/from 但未提供授权码 → 明确报错
 	cfg := mailerCfg(repository.MailerTypeSMTP)
 	cfg.Smtp = repository.SmtpConfig{Host: "smtp.example.com", Port: 465, From: "no-reply@example.com"}
-	p, _ = New(emailTarget("m", "a@b.c"), cfg, "", arts)
-	_, err = p.Push(context.Background(), &Message{Topic: "t", Subject: "s", Body: "b"})
+	p, _ = New(emailTarget("m", "a@b.c"), cfg, "", arts, "")
+	_, err = p.Push(context.Background(), &Message{Subscription: "t", Subject: "s", Body: "b"})
 	if err == nil || !strings.Contains(err.Error(), "授权码") {
 		t.Errorf("缺授权码应返回配置引导错误,得到 %v", err)
 	}
@@ -110,7 +142,7 @@ func TestBuildMessage(t *testing.T) {
 		SubjectPrefix: "[InfoSentinel]",
 		Smtp:          repository.SmtpConfig{From: "no-reply@example.com"},
 	}
-	m := p.buildMessage(&Message{Topic: "t1", Subject: "今日看点", Body: "正文"})
+	m := p.buildMessage(&Message{Subscription: "t1", Subject: "今日看点", Body: "正文"})
 
 	from := m.GetHeader("From")
 	if len(from) != 1 || from[0] != "no-reply@example.com" {
@@ -158,7 +190,7 @@ func TestSMTPSSLPolicy(t *testing.T) {
 }
 
 func TestNewUnsupportedType(t *testing.T) {
-	if _, err := New(&repository.Target{Name: "w", Type: "webhook"}, &repository.MailerConfig{}, "", nil); err == nil {
+	if _, err := New(&repository.Target{Name: "w", Type: "webhook"}, &repository.MailerConfig{}, "", nil, ""); err == nil {
 		t.Error("未知通道类型应返回错误")
 	}
 }

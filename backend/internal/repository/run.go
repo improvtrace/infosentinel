@@ -25,28 +25,31 @@ const (
 // RunRecord 是一条订阅运行记录。
 // JSON 字段名与前端 RunRecord 类型一一对应。
 type RunRecord struct {
-	ID         int64         `json:"id"`
-	Topic      string        `json:"topic"` // 订阅主题(订阅身份)
-	Trigger    string        `json:"trigger"`
-	Status     RunStatus     `json:"status"`
-	StartedAt  time.Time     `json:"started_at"`
-	FinishedAt time.Time     `json:"finished_at"`
-	Duration   time.Duration `json:"duration"`
-	Error      string        `json:"error"`
-	Subject    string        `json:"subject"`
-	Body       string        `json:"body"`
+	ID           int64         `json:"id"`
+	Subscription string        `json:"subscription"` // 订阅名称(订阅身份)
+	Trigger      string        `json:"trigger"`
+	Status       RunStatus     `json:"status"`
+	StartedAt    time.Time     `json:"started_at"`
+	FinishedAt   time.Time     `json:"finished_at"`
+	Duration     time.Duration `json:"duration"`
+	Error        string        `json:"error"`
+	Subject      string        `json:"subject"`
+	Body         string        `json:"body"`
+	// Artifacts 是本次运行产物路径(DSN 格式:类型://空间名/分桶/文件名),
+	// 站内信模式下每个写入的产物一条;失败或未写产物时为空。
+	Artifacts []string `json:"artifacts"`
 }
 
 // RunRepository 是订阅运行记录仓库。
 type RunRepository interface {
 	// StartRun 创建一条 running 状态的记录,返回记录 ID。
-	StartRun(ctx context.Context, topic, trigger string) (int64, error)
-	// FinishRun 收尾一条记录:成功时写入 subject/body,失败时写入错误信息;
+	StartRun(ctx context.Context, subscription, trigger string) (int64, error)
+	// FinishRun 收尾一条记录:成功时写入 subject/body/artifacts,失败时写入错误信息;
 	// 记录不存在时静默返回(与旧内存历史行为一致)。
-	FinishRun(ctx context.Context, id int64, runErr error, subject, body string) error
-	// ListRuns 按开始时间倒序列出运行记录;topic 非空时按订阅(主题)过滤;
+	FinishRun(ctx context.Context, id int64, runErr error, subject, body string, artifacts []string) error
+	// ListRuns 按开始时间倒序列出运行记录;subscription 非空时按订阅过滤;
 	// limit <= 0 时不限制。
-	ListRuns(ctx context.Context, topic string, limit int) ([]RunRecord, error)
+	ListRuns(ctx context.Context, subscription string, limit int) ([]RunRecord, error)
 	// GetRun 按 ID 查询单条记录,不存在返回 ErrNotFound。
 	GetRun(ctx context.Context, id int64) (RunRecord, error)
 	// CountRuns 返回记录总数。

@@ -11,7 +11,6 @@ import ConfigLayout from './pages/config/ConfigLayout'
 import Console from './pages/config/Console'
 import Topics from './pages/config/Topics'
 import Targets from './pages/config/Targets'
-import Sources from './pages/config/Sources'
 import Settings from './pages/config/Settings'
 
 export default function App() {
@@ -20,16 +19,15 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="subscriptions" element={<Subscriptions />} />
-        <Route path="subscriptions/:topic" element={<SubscriptionDetail />} />
+        <Route path="subscriptions/:name" element={<SubscriptionDetail />} />
         <Route path="runs" element={<Runs />} />
         <Route path="runs/:id" element={<RunDetail />} />
         <Route path="artifacts" element={<Artifacts />} />
-        <Route path="artifacts/:bucket/:name" element={<ArtifactView />} />
+        <Route path="artifacts/:space/:bucket/:name" element={<ArtifactView />} />
         <Route path="config" element={<ConfigLayout />}>
           <Route index element={<Console />} />
           <Route path="topics" element={<Topics />} />
           <Route path="targets" element={<Targets />} />
-          <Route path="sources" element={<Sources />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<div className="empty mt-8">404 页面不存在</div>} />

@@ -10,17 +10,24 @@ import (
 
 // 敏感数据名称。
 const (
-	NameLLMAPIKey       = "llm.api_key"
-	NameSMTPPassword    = "smtp.password"
+	NameLLMAPIKey    = "llm.api_key"
+	NameSMTPPassword = "smtp.password"
+	// NameStoragePassword 是旧版单产物空间时代的登录密码名;仍作为
+	// 逐空间密码缺失时的回退(升级后无需重新录入密码)。
 	NameStoragePassword = "storage.password"
 )
+
+// SpacePasswordName 返回某产物空间的 SFTP/FTP 登录密码名(逐空间隔离)。
+func SpacePasswordName(space string) string {
+	return "storage." + space + ".password"
+}
 
 // Resolver 解析运行时敏感数据:仅从数据库密文读取(AES-GCM)。
 //
 // 约定名称:
-//   - llm.api_key       模型 API Key
-//   - smtp.password     SMTP 授权码
-//   - storage.password  SFTP/FTP 登录密码
+//   - llm.api_key                模型 API Key
+//   - smtp.password              SMTP 授权码
+//   - storage.<space>.password   某产物空间的 SFTP/FTP 登录密码(回退 storage.password)
 //
 // 业务配置不读环境变量,Web 界面“全局设置”是唯一入口;
 // 写入的值加密存储于数据库(主密钥为引导层的 INFOSENTINEL_ENCRYPT_KEY)。
@@ -43,10 +50,22 @@ func (r *Resolver) SMTPPassword(ctx context.Context) (string, error) {
 	return r.ResolveWith(ctx, NameSMTPPassword, "SMTP 密码/授权码", "", true)
 }
 
-// StoragePassword 返回 SFTP/FTP 登录密码:override → 数据库密文。
+// StoragePassword 返回某产物空间的 SFTP/FTP 登录密码:override → 逐空间密文 →
+// 旧版 storage.password 密文。
 // 均缺失时返回空串(本地驱动/私钥登录无需密码,密码缺失错误由驱动在使用时报出)。
-func (r *Resolver) StoragePassword(ctx context.Context, override string) (string, error) {
-	return r.ResolveWith(ctx, NameStoragePassword, "SFTP/FTP 密码", override, false)
+func (r *Resolver) StoragePassword(ctx context.Context, space, override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	v, err := r.ResolveWith(ctx, SpacePasswordName(space), "SFTP/FTP 密码", "", false)
+	if err != nil {
+		return "", err
+	}
+	if v != "" {
+		return v, nil
+	}
+	// 旧库只有全局 storage.password,逐空间密码缺失时回退,升级无需重录
+	return r.ResolveWith(ctx, NameStoragePassword, "SFTP/FTP 密码", "", false)
 }
 
 // ResolveWith 按 override → 数据库密文 的顺序解析敏感数据。

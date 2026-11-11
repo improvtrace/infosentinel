@@ -11,7 +11,7 @@ interface SubscriptionDetailData extends Subscription {
 }
 
 export default function SubscriptionDetail() {
-  const { topic } = useParams()
+  const { name } = useParams()
   const [sub, setSub] = useState<SubscriptionDetailData | null>(null)
   const [cfg, setCfg] = useState<Config | null>(null)
   const [runs, setRuns] = useState<RunRecord[]>([])
@@ -22,7 +22,7 @@ export default function SubscriptionDetail() {
     get<Config>('/api/config')
       .then((c) => {
         setCfg(c)
-        const t = c.subscriptions.find((x) => x.topic === topic)
+        const t = c.subscriptions.find((x) => x.name === name)
         if (!t) {
           setErr('订阅不存在')
           return
@@ -31,18 +31,18 @@ export default function SubscriptionDetail() {
       })
       .catch((e) => setErr(errMsg(e)))
     get<{ nexts: NextRun[] }>('/api/overview')
-      .then((ov) => setSub((prev) => (prev ? { ...prev, next: ov.nexts.find((n) => n.topic === topic) } : prev)))
+      .then((ov) => setSub((prev) => (prev ? { ...prev, next: ov.nexts.find((n) => n.subscription === name) } : prev)))
       .catch(() => null)
-    get<{ items: RunRecord[] }>(`/api/runs?topic=${encodeURIComponent(topic ?? '')}&limit=20`)
+    get<{ items: RunRecord[] }>(`/api/runs?subscription=${encodeURIComponent(name ?? '')}&limit=20`)
       .then((r) => setRuns(r.items))
       .catch(() => null)
   }
-  useEffect(load, [topic])
+  useEffect(load, [name])
 
   const runNow = async () => {
     setErr('')
     try {
-      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(topic ?? '')}/run`)
+      await post<MutationResult>(`/api/subscriptions/${encodeURIComponent(name ?? '')}/run`)
       setCallout('已触发,后台执行中;稍后刷新查看进度')
       setTimeout(load, 1500)
     } catch (e) {
@@ -52,19 +52,22 @@ export default function SubscriptionDetail() {
 
   if (err && !sub) return <Callout err={err} />
   if (!sub || !cfg) return null
-  const t = cfg.topics.find((x) => x.name === sub.topic)
+  const topics = sub.topics
+    .map((n) => cfg.topics.find((x) => x.name === n))
+    .filter((x): x is NonNullable<typeof x> => Boolean(x))
   const targetObjs = sub.targets
     .map((n) => cfg.targets.find((x) => x.name === n))
     .filter((x): x is NonNullable<typeof x> => Boolean(x))
 
   return (
     <div>
-      <Crumb items={[{ to: '/subscriptions', label: '订阅管理' }, { label: sub.topic }]} />
+      <Crumb items={[{ to: '/subscriptions', label: '订阅管理' }, { label: sub.name }]} />
       <PageHead
-        title={`订阅 ${sub.topic}`}
+        title={`订阅 ${sub.name}`}
         desc={
           <>
             cron <span className="mono">{sub.cron}</span>
+            ，主题 {sub.topics.join('、')}
             {targetObjs.length > 0 && (
               <>
                 ，推送目标{' '}
@@ -76,11 +79,12 @@ export default function SubscriptionDetail() {
                 ))}
               </>
             )}
+            {sub.space && <>，产物空间 <span className="mono">{sub.space}</span></>}
           </>
         }
         actions={
           <>
-            <Link className="btn btn-ghost" to={`/subscriptions?edit=${encodeURIComponent(sub.topic)}`}>
+            <Link className="btn btn-ghost" to={`/subscriptions?edit=${encodeURIComponent(sub.name)}`}>
               <IconEdit width={13} height={13} /> 编辑
             </Link>
             <button className="btn" onClick={runNow}>
@@ -91,12 +95,25 @@ export default function SubscriptionDetail() {
       />
       <Callout msg={flash} err={err} />
 
-      {t && (
+      {topics.length > 0 && (
         <details className="card mt-5 p-4">
-          <summary className="cursor-pointer text-[13px] font-medium text-dim">主题 prompt</summary>
-          <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-dim">
-            {t.prompt}
-          </pre>
+          <summary className="cursor-pointer text-[13px] font-medium text-dim">主题 prompt({topics.length} 个,各自独立采集)</summary>
+          {topics.map((t) => (
+            <div key={t.name} className="mt-3 first:mt-0 border-t border-line pt-3 first:border-0 first:pt-0">
+              <p className="m-0 text-[12.5px] font-medium text-accent mono">{t.name}</p>
+              <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-dim">
+                {t.prompt}
+              </pre>
+            </div>
+          ))}
+          {topics.length > 1 && sub.synthesis && (
+            <div className="mt-3 border-t border-line pt-3">
+              <p className="m-0 text-[12.5px] font-medium text-accent">合成提示词(合并为一份报告)</p>
+              <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[12.5px] leading-relaxed text-dim">
+                {sub.synthesis}
+              </pre>
+            </div>
+          )}
         </details>
       )}
 
@@ -171,7 +188,7 @@ export default function SubscriptionDetail() {
       </Section>
 
       <Section title="产物">
-        <Link className="text-[13px] text-accent no-underline hover:underline" to={`/artifacts?topic=${encodeURIComponent(sub.topic)}`}>
+        <Link className="text-[13px] text-accent no-underline hover:underline" to={`/artifacts?subscription=${encodeURIComponent(sub.name)}`}>
           查看该订阅的产物
         </Link>
       </Section>

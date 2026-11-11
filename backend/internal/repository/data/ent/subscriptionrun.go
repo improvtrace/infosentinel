@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,8 +18,8 @@ type SubscriptionRun struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID int `json:"id,omitempty"`
-	// Topic holds the value of the "topic" field.
-	Topic string `json:"topic,omitempty"`
+	// Subscription holds the value of the "subscription" field.
+	Subscription string `json:"subscription,omitempty"`
 	// Trigger holds the value of the "trigger" field.
 	Trigger string `json:"trigger,omitempty"`
 	// Status holds the value of the "status" field.
@@ -34,7 +35,9 @@ type SubscriptionRun struct {
 	// Subject holds the value of the "subject" field.
 	Subject string `json:"subject,omitempty"`
 	// Body holds the value of the "body" field.
-	Body         string `json:"body,omitempty"`
+	Body string `json:"body,omitempty"`
+	// Artifacts holds the value of the "artifacts" field.
+	Artifacts    []string `json:"artifacts,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -43,9 +46,11 @@ func (*SubscriptionRun) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case subscriptionrun.FieldArtifacts:
+			values[i] = new([]byte)
 		case subscriptionrun.FieldID, subscriptionrun.FieldDuration:
 			values[i] = new(sql.NullInt64)
-		case subscriptionrun.FieldTopic, subscriptionrun.FieldTrigger, subscriptionrun.FieldStatus, subscriptionrun.FieldError, subscriptionrun.FieldSubject, subscriptionrun.FieldBody:
+		case subscriptionrun.FieldSubscription, subscriptionrun.FieldTrigger, subscriptionrun.FieldStatus, subscriptionrun.FieldError, subscriptionrun.FieldSubject, subscriptionrun.FieldBody:
 			values[i] = new(sql.NullString)
 		case subscriptionrun.FieldStartedAt, subscriptionrun.FieldFinishedAt:
 			values[i] = new(sql.NullTime)
@@ -70,11 +75,11 @@ func (_m *SubscriptionRun) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
 			_m.ID = int(value.Int64)
-		case subscriptionrun.FieldTopic:
+		case subscriptionrun.FieldSubscription:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field topic", values[i])
+				return fmt.Errorf("unexpected type %T for field subscription", values[i])
 			} else if value.Valid {
-				_m.Topic = value.String
+				_m.Subscription = value.String
 			}
 		case subscriptionrun.FieldTrigger:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -124,6 +129,14 @@ func (_m *SubscriptionRun) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Body = value.String
 			}
+		case subscriptionrun.FieldArtifacts:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field artifacts", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Artifacts); err != nil {
+					return fmt.Errorf("unmarshal field artifacts: %w", err)
+				}
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -160,8 +173,8 @@ func (_m *SubscriptionRun) String() string {
 	var builder strings.Builder
 	builder.WriteString("SubscriptionRun(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
-	builder.WriteString("topic=")
-	builder.WriteString(_m.Topic)
+	builder.WriteString("subscription=")
+	builder.WriteString(_m.Subscription)
 	builder.WriteString(", ")
 	builder.WriteString("trigger=")
 	builder.WriteString(_m.Trigger)
@@ -186,6 +199,9 @@ func (_m *SubscriptionRun) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("body=")
 	builder.WriteString(_m.Body)
+	builder.WriteString(", ")
+	builder.WriteString("artifacts=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Artifacts))
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -3,6 +3,9 @@
 // 流程:用一次性内存 SQLite 重放现有迁移目录 → 与 ent schema 求差 →
 // 写入 <UTC时间戳>_<name>.sql 并更新 atlas.sum。不触碰真实数据库。
 //
+// 手工调整生成的迁移 SQL(如保数据变换)后,校验和会失配,此时执行
+// `go run ./backend/cmd/migrate-diff -hash` 仅按当前目录内容重算 atlas.sum。
+//
 // 用法(一般通过 make migrate-diff NAME=xxx 调用):
 //
 //	go run ./backend/cmd/migrate-diff -name add_tags
@@ -29,10 +32,12 @@ import (
 
 func main() {
 	var name string
+	var rehash bool
 	flag.StringVar(&name, "name", "changes", "迁移描述(写入迁移文件名,如 add_tags)")
+	flag.BoolVar(&rehash, "hash", false, "不生成迁移,仅按当前迁移目录内容重算 atlas.sum(手工调整 SQL 后使用)")
 	flag.Parse()
 
-	if err := run(name); err != nil {
+	if err := run(name, rehash); err != nil {
 		log.Fatalf("migrate-diff: %v", err)
 	}
 }
@@ -55,8 +60,8 @@ func moduleRoot() (string, error) {
 	}
 }
 
-func run(name string) error {
-	if name == "" {
+func run(name string, rehash bool) error {
+	if !rehash && name == "" {
 		return fmt.Errorf("迁移名不能为空(-name)")
 	}
 	root, err := moduleRoot()
@@ -71,6 +76,19 @@ func run(name string) error {
 	dir, err := migrate.NewLocalDir(dirPath)
 	if err != nil {
 		return fmt.Errorf("打开迁移目录 %s: %w", dirPath, err)
+	}
+
+	// -hash:按当前目录内容重算 atlas.sum(手工调整迁移 SQL 后使用)。
+	if rehash {
+		sum, err := dir.Checksum()
+		if err != nil {
+			return fmt.Errorf("计算迁移目录校验和: %w", err)
+		}
+		if err := migrate.WriteSumFile(dir, sum); err != nil {
+			return fmt.Errorf("写入 atlas.sum: %w", err)
+		}
+		fmt.Printf("==> atlas.sum 已按 %s 重算\n", dirPath)
+		return nil
 	}
 
 	// 一次性内存库:ModeReplay 在其上重放迁移目录得到当前状态,再与 ent schema 求差。

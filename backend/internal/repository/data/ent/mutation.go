@@ -803,10 +803,14 @@ type SubscriptionMutation struct {
 	op            Op
 	typ           string
 	id            *int
-	topic         *string
+	name          *string
+	topics        *[]string
+	appendtopics  []string
+	synthesis     *string
 	cron          *string
 	targets       *[]string
 	appendtargets []string
+	space         *string
 	clearedFields map[string]struct{}
 	done          bool
 	oldValue      func(context.Context) (*Subscription, error)
@@ -911,40 +915,127 @@ func (m *SubscriptionMutation) IDs(ctx context.Context) ([]int, error) {
 	}
 }
 
-// SetTopic sets the "topic" field.
-func (m *SubscriptionMutation) SetTopic(s string) {
-	m.topic = &s
+// SetName sets the "name" field.
+func (m *SubscriptionMutation) SetName(s string) {
+	m.name = &s
 }
 
-// Topic returns the value of the "topic" field in the mutation.
-func (m *SubscriptionMutation) Topic() (r string, exists bool) {
-	v := m.topic
+// Name returns the value of the "name" field in the mutation.
+func (m *SubscriptionMutation) Name() (r string, exists bool) {
+	v := m.name
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTopic returns the old "topic" field's value of the Subscription entity.
+// OldName returns the old "name" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldTopic(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldName(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTopic is only allowed on UpdateOne operations")
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTopic requires an ID field in the mutation")
+		return v, errors.New("OldName requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTopic: %w", err)
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
 	}
-	return oldValue.Topic, nil
+	return oldValue.Name, nil
 }
 
-// ResetTopic resets all changes to the "topic" field.
-func (m *SubscriptionMutation) ResetTopic() {
-	m.topic = nil
+// ResetName resets all changes to the "name" field.
+func (m *SubscriptionMutation) ResetName() {
+	m.name = nil
+}
+
+// SetTopics sets the "topics" field.
+func (m *SubscriptionMutation) SetTopics(s []string) {
+	m.topics = &s
+	m.appendtopics = nil
+}
+
+// Topics returns the value of the "topics" field in the mutation.
+func (m *SubscriptionMutation) Topics() (r []string, exists bool) {
+	v := m.topics
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTopics returns the old "topics" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldTopics(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTopics is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTopics requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTopics: %w", err)
+	}
+	return oldValue.Topics, nil
+}
+
+// AppendTopics adds s to the "topics" field.
+func (m *SubscriptionMutation) AppendTopics(s []string) {
+	m.appendtopics = append(m.appendtopics, s...)
+}
+
+// AppendedTopics returns the list of values that were appended to the "topics" field in this mutation.
+func (m *SubscriptionMutation) AppendedTopics() ([]string, bool) {
+	if len(m.appendtopics) == 0 {
+		return nil, false
+	}
+	return m.appendtopics, true
+}
+
+// ResetTopics resets all changes to the "topics" field.
+func (m *SubscriptionMutation) ResetTopics() {
+	m.topics = nil
+	m.appendtopics = nil
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (m *SubscriptionMutation) SetSynthesis(s string) {
+	m.synthesis = &s
+}
+
+// Synthesis returns the value of the "synthesis" field in the mutation.
+func (m *SubscriptionMutation) Synthesis() (r string, exists bool) {
+	v := m.synthesis
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSynthesis returns the old "synthesis" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldSynthesis(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSynthesis is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSynthesis requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSynthesis: %w", err)
+	}
+	return oldValue.Synthesis, nil
+}
+
+// ResetSynthesis resets all changes to the "synthesis" field.
+func (m *SubscriptionMutation) ResetSynthesis() {
+	m.synthesis = nil
 }
 
 // SetCron sets the "cron" field.
@@ -1034,6 +1125,42 @@ func (m *SubscriptionMutation) ResetTargets() {
 	m.appendtargets = nil
 }
 
+// SetSpace sets the "space" field.
+func (m *SubscriptionMutation) SetSpace(s string) {
+	m.space = &s
+}
+
+// Space returns the value of the "space" field in the mutation.
+func (m *SubscriptionMutation) Space() (r string, exists bool) {
+	v := m.space
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSpace returns the old "space" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldSpace(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSpace is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSpace requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSpace: %w", err)
+	}
+	return oldValue.Space, nil
+}
+
+// ResetSpace resets all changes to the "space" field.
+func (m *SubscriptionMutation) ResetSpace() {
+	m.space = nil
+}
+
 // Where appends a list predicates to the SubscriptionMutation builder.
 func (m *SubscriptionMutation) Where(ps ...predicate.Subscription) {
 	m.predicates = append(m.predicates, ps...)
@@ -1068,15 +1195,24 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 3)
-	if m.topic != nil {
-		fields = append(fields, subscription.FieldTopic)
+	fields := make([]string, 0, 6)
+	if m.name != nil {
+		fields = append(fields, subscription.FieldName)
+	}
+	if m.topics != nil {
+		fields = append(fields, subscription.FieldTopics)
+	}
+	if m.synthesis != nil {
+		fields = append(fields, subscription.FieldSynthesis)
 	}
 	if m.cron != nil {
 		fields = append(fields, subscription.FieldCron)
 	}
 	if m.targets != nil {
 		fields = append(fields, subscription.FieldTargets)
+	}
+	if m.space != nil {
+		fields = append(fields, subscription.FieldSpace)
 	}
 	return fields
 }
@@ -1086,12 +1222,18 @@ func (m *SubscriptionMutation) Fields() []string {
 // schema.
 func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 	switch name {
-	case subscription.FieldTopic:
-		return m.Topic()
+	case subscription.FieldName:
+		return m.Name()
+	case subscription.FieldTopics:
+		return m.Topics()
+	case subscription.FieldSynthesis:
+		return m.Synthesis()
 	case subscription.FieldCron:
 		return m.Cron()
 	case subscription.FieldTargets:
 		return m.Targets()
+	case subscription.FieldSpace:
+		return m.Space()
 	}
 	return nil, false
 }
@@ -1101,12 +1243,18 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 // database failed.
 func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
 	switch name {
-	case subscription.FieldTopic:
-		return m.OldTopic(ctx)
+	case subscription.FieldName:
+		return m.OldName(ctx)
+	case subscription.FieldTopics:
+		return m.OldTopics(ctx)
+	case subscription.FieldSynthesis:
+		return m.OldSynthesis(ctx)
 	case subscription.FieldCron:
 		return m.OldCron(ctx)
 	case subscription.FieldTargets:
 		return m.OldTargets(ctx)
+	case subscription.FieldSpace:
+		return m.OldSpace(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -1116,12 +1264,26 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 // type.
 func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 	switch name {
-	case subscription.FieldTopic:
+	case subscription.FieldName:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTopic(v)
+		m.SetName(v)
+		return nil
+	case subscription.FieldTopics:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTopics(v)
+		return nil
+	case subscription.FieldSynthesis:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSynthesis(v)
 		return nil
 	case subscription.FieldCron:
 		v, ok := value.(string)
@@ -1136,6 +1298,13 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTargets(v)
+		return nil
+	case subscription.FieldSpace:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSpace(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
@@ -1186,14 +1355,23 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 // It returns an error if the field is not defined in the schema.
 func (m *SubscriptionMutation) ResetField(name string) error {
 	switch name {
-	case subscription.FieldTopic:
-		m.ResetTopic()
+	case subscription.FieldName:
+		m.ResetName()
+		return nil
+	case subscription.FieldTopics:
+		m.ResetTopics()
+		return nil
+	case subscription.FieldSynthesis:
+		m.ResetSynthesis()
 		return nil
 	case subscription.FieldCron:
 		m.ResetCron()
 		return nil
 	case subscription.FieldTargets:
 		m.ResetTargets()
+		return nil
+	case subscription.FieldSpace:
+		m.ResetSpace()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
@@ -1250,23 +1428,25 @@ func (m *SubscriptionMutation) ResetEdge(name string) error {
 // SubscriptionRunMutation represents an operation that mutates the SubscriptionRun nodes in the graph.
 type SubscriptionRunMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	topic         *string
-	trigger       *string
-	status        *string
-	started_at    *time.Time
-	finished_at   *time.Time
-	duration      *int64
-	addduration   *int64
-	error         *string
-	subject       *string
-	body          *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*SubscriptionRun, error)
-	predicates    []predicate.SubscriptionRun
+	op              Op
+	typ             string
+	id              *int
+	subscription    *string
+	trigger         *string
+	status          *string
+	started_at      *time.Time
+	finished_at     *time.Time
+	duration        *int64
+	addduration     *int64
+	error           *string
+	subject         *string
+	body            *string
+	artifacts       *[]string
+	appendartifacts []string
+	clearedFields   map[string]struct{}
+	done            bool
+	oldValue        func(context.Context) (*SubscriptionRun, error)
+	predicates      []predicate.SubscriptionRun
 }
 
 var _ ent.Mutation = (*SubscriptionRunMutation)(nil)
@@ -1367,40 +1547,40 @@ func (m *SubscriptionRunMutation) IDs(ctx context.Context) ([]int, error) {
 	}
 }
 
-// SetTopic sets the "topic" field.
-func (m *SubscriptionRunMutation) SetTopic(s string) {
-	m.topic = &s
+// SetSubscription sets the "subscription" field.
+func (m *SubscriptionRunMutation) SetSubscription(s string) {
+	m.subscription = &s
 }
 
-// Topic returns the value of the "topic" field in the mutation.
-func (m *SubscriptionRunMutation) Topic() (r string, exists bool) {
-	v := m.topic
+// Subscription returns the value of the "subscription" field in the mutation.
+func (m *SubscriptionRunMutation) Subscription() (r string, exists bool) {
+	v := m.subscription
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTopic returns the old "topic" field's value of the SubscriptionRun entity.
+// OldSubscription returns the old "subscription" field's value of the SubscriptionRun entity.
 // If the SubscriptionRun object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionRunMutation) OldTopic(ctx context.Context) (v string, err error) {
+func (m *SubscriptionRunMutation) OldSubscription(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTopic is only allowed on UpdateOne operations")
+		return v, errors.New("OldSubscription is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTopic requires an ID field in the mutation")
+		return v, errors.New("OldSubscription requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTopic: %w", err)
+		return v, fmt.Errorf("querying old value for OldSubscription: %w", err)
 	}
-	return oldValue.Topic, nil
+	return oldValue.Subscription, nil
 }
 
-// ResetTopic resets all changes to the "topic" field.
-func (m *SubscriptionRunMutation) ResetTopic() {
-	m.topic = nil
+// ResetSubscription resets all changes to the "subscription" field.
+func (m *SubscriptionRunMutation) ResetSubscription() {
+	m.subscription = nil
 }
 
 // SetTrigger sets the "trigger" field.
@@ -1724,6 +1904,71 @@ func (m *SubscriptionRunMutation) ResetBody() {
 	m.body = nil
 }
 
+// SetArtifacts sets the "artifacts" field.
+func (m *SubscriptionRunMutation) SetArtifacts(s []string) {
+	m.artifacts = &s
+	m.appendartifacts = nil
+}
+
+// Artifacts returns the value of the "artifacts" field in the mutation.
+func (m *SubscriptionRunMutation) Artifacts() (r []string, exists bool) {
+	v := m.artifacts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifacts returns the old "artifacts" field's value of the SubscriptionRun entity.
+// If the SubscriptionRun object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionRunMutation) OldArtifacts(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifacts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifacts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifacts: %w", err)
+	}
+	return oldValue.Artifacts, nil
+}
+
+// AppendArtifacts adds s to the "artifacts" field.
+func (m *SubscriptionRunMutation) AppendArtifacts(s []string) {
+	m.appendartifacts = append(m.appendartifacts, s...)
+}
+
+// AppendedArtifacts returns the list of values that were appended to the "artifacts" field in this mutation.
+func (m *SubscriptionRunMutation) AppendedArtifacts() ([]string, bool) {
+	if len(m.appendartifacts) == 0 {
+		return nil, false
+	}
+	return m.appendartifacts, true
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (m *SubscriptionRunMutation) ClearArtifacts() {
+	m.artifacts = nil
+	m.appendartifacts = nil
+	m.clearedFields[subscriptionrun.FieldArtifacts] = struct{}{}
+}
+
+// ArtifactsCleared returns if the "artifacts" field was cleared in this mutation.
+func (m *SubscriptionRunMutation) ArtifactsCleared() bool {
+	_, ok := m.clearedFields[subscriptionrun.FieldArtifacts]
+	return ok
+}
+
+// ResetArtifacts resets all changes to the "artifacts" field.
+func (m *SubscriptionRunMutation) ResetArtifacts() {
+	m.artifacts = nil
+	m.appendartifacts = nil
+	delete(m.clearedFields, subscriptionrun.FieldArtifacts)
+}
+
 // Where appends a list predicates to the SubscriptionRunMutation builder.
 func (m *SubscriptionRunMutation) Where(ps ...predicate.SubscriptionRun) {
 	m.predicates = append(m.predicates, ps...)
@@ -1758,9 +2003,9 @@ func (m *SubscriptionRunMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionRunMutation) Fields() []string {
-	fields := make([]string, 0, 9)
-	if m.topic != nil {
-		fields = append(fields, subscriptionrun.FieldTopic)
+	fields := make([]string, 0, 10)
+	if m.subscription != nil {
+		fields = append(fields, subscriptionrun.FieldSubscription)
 	}
 	if m.trigger != nil {
 		fields = append(fields, subscriptionrun.FieldTrigger)
@@ -1786,6 +2031,9 @@ func (m *SubscriptionRunMutation) Fields() []string {
 	if m.body != nil {
 		fields = append(fields, subscriptionrun.FieldBody)
 	}
+	if m.artifacts != nil {
+		fields = append(fields, subscriptionrun.FieldArtifacts)
+	}
 	return fields
 }
 
@@ -1794,8 +2042,8 @@ func (m *SubscriptionRunMutation) Fields() []string {
 // schema.
 func (m *SubscriptionRunMutation) Field(name string) (ent.Value, bool) {
 	switch name {
-	case subscriptionrun.FieldTopic:
-		return m.Topic()
+	case subscriptionrun.FieldSubscription:
+		return m.Subscription()
 	case subscriptionrun.FieldTrigger:
 		return m.Trigger()
 	case subscriptionrun.FieldStatus:
@@ -1812,6 +2060,8 @@ func (m *SubscriptionRunMutation) Field(name string) (ent.Value, bool) {
 		return m.Subject()
 	case subscriptionrun.FieldBody:
 		return m.Body()
+	case subscriptionrun.FieldArtifacts:
+		return m.Artifacts()
 	}
 	return nil, false
 }
@@ -1821,8 +2071,8 @@ func (m *SubscriptionRunMutation) Field(name string) (ent.Value, bool) {
 // database failed.
 func (m *SubscriptionRunMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
 	switch name {
-	case subscriptionrun.FieldTopic:
-		return m.OldTopic(ctx)
+	case subscriptionrun.FieldSubscription:
+		return m.OldSubscription(ctx)
 	case subscriptionrun.FieldTrigger:
 		return m.OldTrigger(ctx)
 	case subscriptionrun.FieldStatus:
@@ -1839,6 +2089,8 @@ func (m *SubscriptionRunMutation) OldField(ctx context.Context, name string) (en
 		return m.OldSubject(ctx)
 	case subscriptionrun.FieldBody:
 		return m.OldBody(ctx)
+	case subscriptionrun.FieldArtifacts:
+		return m.OldArtifacts(ctx)
 	}
 	return nil, fmt.Errorf("unknown SubscriptionRun field %s", name)
 }
@@ -1848,12 +2100,12 @@ func (m *SubscriptionRunMutation) OldField(ctx context.Context, name string) (en
 // type.
 func (m *SubscriptionRunMutation) SetField(name string, value ent.Value) error {
 	switch name {
-	case subscriptionrun.FieldTopic:
+	case subscriptionrun.FieldSubscription:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTopic(v)
+		m.SetSubscription(v)
 		return nil
 	case subscriptionrun.FieldTrigger:
 		v, ok := value.(string)
@@ -1911,6 +2163,13 @@ func (m *SubscriptionRunMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBody(v)
 		return nil
+	case subscriptionrun.FieldArtifacts:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifacts(v)
+		return nil
 	}
 	return fmt.Errorf("unknown SubscriptionRun field %s", name)
 }
@@ -1959,6 +2218,9 @@ func (m *SubscriptionRunMutation) ClearedFields() []string {
 	if m.FieldCleared(subscriptionrun.FieldFinishedAt) {
 		fields = append(fields, subscriptionrun.FieldFinishedAt)
 	}
+	if m.FieldCleared(subscriptionrun.FieldArtifacts) {
+		fields = append(fields, subscriptionrun.FieldArtifacts)
+	}
 	return fields
 }
 
@@ -1976,6 +2238,9 @@ func (m *SubscriptionRunMutation) ClearField(name string) error {
 	case subscriptionrun.FieldFinishedAt:
 		m.ClearFinishedAt()
 		return nil
+	case subscriptionrun.FieldArtifacts:
+		m.ClearArtifacts()
+		return nil
 	}
 	return fmt.Errorf("unknown SubscriptionRun nullable field %s", name)
 }
@@ -1984,8 +2249,8 @@ func (m *SubscriptionRunMutation) ClearField(name string) error {
 // It returns an error if the field is not defined in the schema.
 func (m *SubscriptionRunMutation) ResetField(name string) error {
 	switch name {
-	case subscriptionrun.FieldTopic:
-		m.ResetTopic()
+	case subscriptionrun.FieldSubscription:
+		m.ResetSubscription()
 		return nil
 	case subscriptionrun.FieldTrigger:
 		m.ResetTrigger()
@@ -2010,6 +2275,9 @@ func (m *SubscriptionRunMutation) ResetField(name string) error {
 		return nil
 	case subscriptionrun.FieldBody:
 		m.ResetBody()
+		return nil
+	case subscriptionrun.FieldArtifacts:
+		m.ResetArtifacts()
 		return nil
 	}
 	return fmt.Errorf("unknown SubscriptionRun field %s", name)

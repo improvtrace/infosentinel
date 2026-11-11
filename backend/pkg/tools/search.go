@@ -9,8 +9,14 @@ import (
 	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/ddgsearch"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+)
 
-	"github.com/tomasgdl/infosentinel/backend/internal/repository"
+// 搜索工具内置参数(无全局配置)。
+const (
+	// searchRegion 是 DuckDuckGo 结果区域(cn-zh 偏中文结果)。
+	searchRegion = "cn-zh"
+	// searchMaxResults 是单次搜索返回的最大结果数。
+	searchMaxResults = 8
 )
 
 // searchResultItem 是返回给 LLM 的单条搜索结果。
@@ -30,15 +36,13 @@ type searchToolParams struct {
 
 // searchTool 持有 search_web 工具的依赖。
 type searchTool struct {
-	ddgs       *ddgsearch.DDGS
-	region     string
-	maxResults int
-	store      *SeenStore
-	nowFn      func() time.Time
+	ddgs  *ddgsearch.DDGS
+	store *SeenStore
+	nowFn func() time.Time
 }
 
 // NewSearchTool 创建 search_web 工具:基于 DuckDuckGo 的网络搜索(无需 API Key)。
-func NewSearchTool(cfg *repository.SearchConfig, store *SeenStore) (tool.InvokableTool, error) {
+func NewSearchTool(store *SeenStore) (tool.InvokableTool, error) {
 	ddgs, err := ddgsearch.New(&ddgsearch.Config{
 		// Region/SafeSearch 等筛选在每次 Search 的 SearchParams 中传入
 		Timeout: 0, // 走库默认;外层 agent 请求带 ctx 超时
@@ -46,13 +50,7 @@ func NewSearchTool(cfg *repository.SearchConfig, store *SeenStore) (tool.Invokab
 	if err != nil {
 		return nil, fmt.Errorf("初始化 duckduckgo 搜索: %w", err)
 	}
-	t := &searchTool{
-		ddgs:       ddgs,
-		region:     cfg.Region,
-		maxResults: cfg.MaxResults,
-		store:      store,
-		nowFn:      time.Now,
-	}
+	t := &searchTool{ddgs: ddgs, store: store, nowFn: time.Now}
 	return utils.InferTool(
 		"search_web",
 		"Search the web with DuckDuckGo for recent news, articles and releases about a topic. "+
@@ -77,9 +75,9 @@ func (t *searchTool) invoke(ctx context.Context, params *searchToolParams) (stri
 
 	resp, err := t.ddgs.Search(ctx, &ddgsearch.SearchParams{
 		Query:      params.Query,
-		Region:     ddgsearch.Region(t.region),
+		Region:     ddgsearch.Region(searchRegion),
 		SafeSearch: ddgsearch.SafeSearchModerate,
-		MaxResults: t.maxResults,
+		MaxResults: searchMaxResults,
 		TimeRange:  tr,
 	})
 	if err != nil {
@@ -87,8 +85,8 @@ func (t *searchTool) invoke(ctx context.Context, params *searchToolParams) (stri
 	}
 
 	now := t.nowFn()
-	items := make([]searchResultItem, 0, t.maxResults)
-	links := make([]string, 0, t.maxResults)
+	items := make([]searchResultItem, 0, searchMaxResults)
+	links := make([]string, 0, searchMaxResults)
 	for _, r := range resp.Results {
 		if len(t.store.Filter([]string{r.URL})) == 0 {
 			continue

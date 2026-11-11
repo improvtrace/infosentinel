@@ -1,12 +1,14 @@
-// Package render 将 Markdown 报告渲染为独立 HTML 文档,供 HTML 邮件正文与
-// 产物空间落盘共用:LLM 输出的 Markdown 转换为带内嵌样式的完整 HTML,
-// 不再以 Markdown 纯文本形式发送/保存。
+// Package render 将报告正文渲染为独立 HTML 文档,供 HTML 邮件正文与
+// 产物空间落盘共用:Markdown 正文经 goldmark 转换(默认转义原始 HTML 防注入),
+// HTML 片段正文(合成提示词默认输出)直通内嵌并做轻量防护。
 package render
 
 import (
 	"bytes"
 	"fmt"
 	"html"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/yuin/goldmark"
@@ -45,16 +47,10 @@ body{margin:0;padding:24px 12px;background:#f1f5f9;font-family:-apple-system,Bli
 .foot{padding:14px 28px;border-top:1px solid #e2e8f0;font-size:11.5px;color:#94a3b8;background:#f8fafc;}
 `
 
-// EmailHTML 将 Markdown 报告渲染为独立 HTML 文档。
-// subject 作为页面/邮件标题;转换失败时回退为纯文本段落,保证始终有可用产物。
-func EmailHTML(subject, markdown string, generatedAt time.Time) string {
-	var buf bytes.Buffer
-	if err := md.Convert([]byte(markdown), &buf); err != nil {
-		buf.Reset()
-		buf.WriteString("<p>")
-		buf.WriteString(html.EscapeString(markdown))
-		buf.WriteString("</p>")
-	}
+// EmailHTML 将报告正文渲染为独立 HTML 文档。
+// subject 作为页面/邮件标题;正文按内容自动识别:HTML 片段直通(轻量防护),
+// Markdown 走 goldmark 转换;转换失败时回退为纯文本段落,保证始终有可用产物。
+func EmailHTML(subject, body string, generatedAt time.Time) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -77,5 +73,56 @@ func EmailHTML(subject, markdown string, generatedAt time.Time) string {
 </body>
 </html>
 `, html.EscapeString(subject), css, html.EscapeString(subject),
-		generatedAt.Format("2006-01-02 15:04"), buf.String())
+		generatedAt.Format("2006-01-02 15:04"), convertBody(body))
+}
+
+// convertBody 把报告正文转换为 HTML 片段:剥掉可能包裹全文的代码围栏后,
+// 以 "<" 开头视为 HTML 片段直通(轻量防护),其余按 Markdown 转换。
+func convertBody(body string) string {
+	body = stripCodeFence(body)
+	if strings.HasPrefix(body, "<") {
+		return guardHTML(body)
+	}
+	var buf bytes.Buffer
+	if err := md.Convert([]byte(body), &buf); err != nil {
+		buf.Reset()
+		buf.WriteString("<p>")
+		buf.WriteString(html.EscapeString(body))
+		buf.WriteString("</p>")
+	}
+	return buf.String()
+}
+
+// stripCodeFence 剥离 LLM 可能把整个正文包进的 Markdown 代码围栏(```html ... ```)。
+// 仅当首行以 ``` 开头且末行以 ``` 结尾(整段一个围栏)时剥离,避免误伤正文内的合法代码块。
+func stripCodeFence(s string) string {
+	s = strings.TrimSpace(s)
+	lines := strings.Split(s, "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "```") {
+		return s
+	}
+	if !strings.HasSuffix(strings.TrimSpace(lines[len(lines)-1]), "```") {
+		return s
+	}
+	return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
+}
+
+// 防护规则(轻量兜底,最佳努力):界面用沙箱 iframe(禁脚本)渲染,但产物 HTML
+// 文件可能被独立打开,故剥离脚本类标签、事件属性与 javascript: 链接。
+// 完整约束由合成提示词给出;如需严格白名单净化应引入专用 sanitizer。
+var (
+	scriptBlockRe = regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script\s*>|<script\b[^>]*/?>`)
+	dangerTagRe   = regexp.MustCompile(`(?is)<\s*/?\s*(iframe|object|embed|style)\b[^>]*>`)
+	eventAttrRe   = regexp.MustCompile(`(?i)\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)`)
+	jsHrefRe      = regexp.MustCompile(`(?i)href\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|\s*javascript:[^\s>]+)`)
+)
+
+// guardHTML 对直通的 HTML 片段做轻量防护:剥离 script(含内容)/iframe/object/embed/style
+// 标签、内联事件属性与 javascript: 链接,提示词约束之外多一道兜底。
+func guardHTML(s string) string {
+	s = scriptBlockRe.ReplaceAllString(s, "")
+	s = dangerTagRe.ReplaceAllString(s, "")
+	s = eventAttrRe.ReplaceAllString(s, "")
+	s = jsHrefRe.ReplaceAllString(s, `href="#"`)
+	return s
 }

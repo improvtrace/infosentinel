@@ -63,7 +63,9 @@ export default function Console() {
                     <span className="ml-2 text-dim">→ {cfg.mailer.smtp.host}:{cfg.mailer.smtp.port}</span>
                   )}
                   {cfg.mailer.type === '站内信' && (
-                    <span className="ml-2 text-[12px] text-ghost">报告存入产物空间({cfg.storage.type}),在界面在线查看</span>
+                    <span className="ml-2 text-[12px] text-ghost">
+                      报告存入订阅关联的产物空间({cfg.storage.spaces.map((sp) => sp.name).join('、')}),在界面在线查看
+                    </span>
                   )}
                 </td>
               </tr>
@@ -77,7 +79,7 @@ export default function Console() {
                 <tr key={i}>
                   <td className="text-[12px] text-ghost">调度</td>
                   <td>
-                    <span className="mono">{n.topic}</span> <span className="mono">{n.cron}</span>
+                    <span className="mono">{n.subscription}</span> <span className="mono">{n.cron}</span>
                     <span className="ml-3 text-[12px] text-dim">下次 {ftime(n.next)}</span>
                   </td>
                 </tr>

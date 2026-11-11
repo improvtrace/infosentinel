@@ -6,16 +6,16 @@ import { Crumb, Callout, PageHead } from '../components/ui'
 import type { ArtifactContent } from '../types'
 
 export default function ArtifactView() {
-  const { bucket, name } = useParams()
+  const { space, bucket, name } = useParams()
   const [art, setArt] = useState<ArtifactContent | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => {
     get<ArtifactContent>(
-      `/api/artifacts/${encodeURIComponent(bucket ?? '')}/${encodeURIComponent(name ?? '')}`,
+      `/api/artifacts/${encodeURIComponent(space ?? '')}/${encodeURIComponent(bucket ?? '')}/${encodeURIComponent(name ?? '')}`,
     )
       .then(setArt)
       .catch((e) => setErr(errMsg(e)))
-  }, [bucket, name])
+  }, [space, bucket, name])
 
   if (err) return <Callout err={err} />
   if (!art) return null
@@ -26,17 +26,16 @@ export default function ArtifactView() {
         title={<span className="break-all">{art.name}</span>}
         desc={
           <>
-            {art.topic && (
+            空间 <span className="mono">{art.space}</span>
+            {art.subscription && (
               <>
-                订阅{' '}
-                <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(art.topic)}`}>
-                  {art.topic}
+                ，订阅{' '}
+                <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(art.subscription)}`}>
+                  {art.subscription}
                 </Link>
-                ，分桶{' '}
               </>
             )}
-            {!art.topic && '分桶 '}
-            <span className="mono">{art.bucket}</span>，大小 {human(art.size)}
+            ，分桶 <span className="mono">{art.bucket}</span>，大小 {human(art.size)}
             {art.mod_time && <>，生成于 {ftime(art.mod_time)}</>}
           </>
         }

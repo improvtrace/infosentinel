@@ -22,9 +22,9 @@ type SubscriptionRunCreate struct {
 	conflict []sql.ConflictOption
 }
 
-// SetTopic sets the "topic" field.
-func (_c *SubscriptionRunCreate) SetTopic(v string) *SubscriptionRunCreate {
-	_c.mutation.SetTopic(v)
+// SetSubscription sets the "subscription" field.
+func (_c *SubscriptionRunCreate) SetSubscription(v string) *SubscriptionRunCreate {
+	_c.mutation.SetSubscription(v)
 	return _c
 }
 
@@ -116,6 +116,12 @@ func (_c *SubscriptionRunCreate) SetNillableBody(v *string) *SubscriptionRunCrea
 	return _c
 }
 
+// SetArtifacts sets the "artifacts" field.
+func (_c *SubscriptionRunCreate) SetArtifacts(v []string) *SubscriptionRunCreate {
+	_c.mutation.SetArtifacts(v)
+	return _c
+}
+
 // Mutation returns the SubscriptionRunMutation object of the builder.
 func (_c *SubscriptionRunCreate) Mutation() *SubscriptionRunMutation {
 	return _c.mutation
@@ -171,12 +177,12 @@ func (_c *SubscriptionRunCreate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_c *SubscriptionRunCreate) check() error {
-	if _, ok := _c.mutation.Topic(); !ok {
-		return &ValidationError{Name: "topic", err: errors.New(`ent: missing required field "SubscriptionRun.topic"`)}
+	if _, ok := _c.mutation.Subscription(); !ok {
+		return &ValidationError{Name: "subscription", err: errors.New(`ent: missing required field "SubscriptionRun.subscription"`)}
 	}
-	if v, ok := _c.mutation.Topic(); ok {
-		if err := subscriptionrun.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.topic": %w`, err)}
+	if v, ok := _c.mutation.Subscription(); ok {
+		if err := subscriptionrun.SubscriptionValidator(v); err != nil {
+			return &ValidationError{Name: "subscription", err: fmt.Errorf(`ent: validator failed for field "SubscriptionRun.subscription": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Trigger(); !ok {
@@ -237,9 +243,9 @@ func (_c *SubscriptionRunCreate) createSpec() (*SubscriptionRun, *sqlgraph.Creat
 		_spec = sqlgraph.NewCreateSpec(subscriptionrun.Table, sqlgraph.NewFieldSpec(subscriptionrun.FieldID, field.TypeInt))
 	)
 	_spec.OnConflict = _c.conflict
-	if value, ok := _c.mutation.Topic(); ok {
-		_spec.SetField(subscriptionrun.FieldTopic, field.TypeString, value)
-		_node.Topic = value
+	if value, ok := _c.mutation.Subscription(); ok {
+		_spec.SetField(subscriptionrun.FieldSubscription, field.TypeString, value)
+		_node.Subscription = value
 	}
 	if value, ok := _c.mutation.Trigger(); ok {
 		_spec.SetField(subscriptionrun.FieldTrigger, field.TypeString, value)
@@ -273,6 +279,10 @@ func (_c *SubscriptionRunCreate) createSpec() (*SubscriptionRun, *sqlgraph.Creat
 		_spec.SetField(subscriptionrun.FieldBody, field.TypeString, value)
 		_node.Body = value
 	}
+	if value, ok := _c.mutation.Artifacts(); ok {
+		_spec.SetField(subscriptionrun.FieldArtifacts, field.TypeJSON, value)
+		_node.Artifacts = value
+	}
 	return _node, _spec
 }
 
@@ -280,7 +290,7 @@ func (_c *SubscriptionRunCreate) createSpec() (*SubscriptionRun, *sqlgraph.Creat
 // of the `INSERT` statement. For example:
 //
 //	client.SubscriptionRun.Create().
-//		SetTopic(v).
+//		SetSubscription(v).
 //		OnConflict(
 //			// Update the row with the new values
 //			// the was proposed for insertion.
@@ -289,7 +299,7 @@ func (_c *SubscriptionRunCreate) createSpec() (*SubscriptionRun, *sqlgraph.Creat
 //		// Override some of the fields with custom
 //		// update values.
 //		Update(func(u *ent.SubscriptionRunUpsert) {
-//			SetTopic(v+v).
+//			SetSubscription(v+v).
 //		}).
 //		Exec(ctx)
 func (_c *SubscriptionRunCreate) OnConflict(opts ...sql.ConflictOption) *SubscriptionRunUpsertOne {
@@ -325,15 +335,15 @@ type (
 	}
 )
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionRunUpsert) SetTopic(v string) *SubscriptionRunUpsert {
-	u.Set(subscriptionrun.FieldTopic, v)
+// SetSubscription sets the "subscription" field.
+func (u *SubscriptionRunUpsert) SetSubscription(v string) *SubscriptionRunUpsert {
+	u.Set(subscriptionrun.FieldSubscription, v)
 	return u
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionRunUpsert) UpdateTopic() *SubscriptionRunUpsert {
-	u.SetExcluded(subscriptionrun.FieldTopic)
+// UpdateSubscription sets the "subscription" field to the value that was provided on create.
+func (u *SubscriptionRunUpsert) UpdateSubscription() *SubscriptionRunUpsert {
+	u.SetExcluded(subscriptionrun.FieldSubscription)
 	return u
 }
 
@@ -445,6 +455,24 @@ func (u *SubscriptionRunUpsert) UpdateBody() *SubscriptionRunUpsert {
 	return u
 }
 
+// SetArtifacts sets the "artifacts" field.
+func (u *SubscriptionRunUpsert) SetArtifacts(v []string) *SubscriptionRunUpsert {
+	u.Set(subscriptionrun.FieldArtifacts, v)
+	return u
+}
+
+// UpdateArtifacts sets the "artifacts" field to the value that was provided on create.
+func (u *SubscriptionRunUpsert) UpdateArtifacts() *SubscriptionRunUpsert {
+	u.SetExcluded(subscriptionrun.FieldArtifacts)
+	return u
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (u *SubscriptionRunUpsert) ClearArtifacts() *SubscriptionRunUpsert {
+	u.SetNull(subscriptionrun.FieldArtifacts)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -485,17 +513,17 @@ func (u *SubscriptionRunUpsertOne) Update(set func(*SubscriptionRunUpsert)) *Sub
 	return u
 }
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionRunUpsertOne) SetTopic(v string) *SubscriptionRunUpsertOne {
+// SetSubscription sets the "subscription" field.
+func (u *SubscriptionRunUpsertOne) SetSubscription(v string) *SubscriptionRunUpsertOne {
 	return u.Update(func(s *SubscriptionRunUpsert) {
-		s.SetTopic(v)
+		s.SetSubscription(v)
 	})
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionRunUpsertOne) UpdateTopic() *SubscriptionRunUpsertOne {
+// UpdateSubscription sets the "subscription" field to the value that was provided on create.
+func (u *SubscriptionRunUpsertOne) UpdateSubscription() *SubscriptionRunUpsertOne {
 	return u.Update(func(s *SubscriptionRunUpsert) {
-		s.UpdateTopic()
+		s.UpdateSubscription()
 	})
 }
 
@@ -622,6 +650,27 @@ func (u *SubscriptionRunUpsertOne) SetBody(v string) *SubscriptionRunUpsertOne {
 func (u *SubscriptionRunUpsertOne) UpdateBody() *SubscriptionRunUpsertOne {
 	return u.Update(func(s *SubscriptionRunUpsert) {
 		s.UpdateBody()
+	})
+}
+
+// SetArtifacts sets the "artifacts" field.
+func (u *SubscriptionRunUpsertOne) SetArtifacts(v []string) *SubscriptionRunUpsertOne {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.SetArtifacts(v)
+	})
+}
+
+// UpdateArtifacts sets the "artifacts" field to the value that was provided on create.
+func (u *SubscriptionRunUpsertOne) UpdateArtifacts() *SubscriptionRunUpsertOne {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.UpdateArtifacts()
+	})
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (u *SubscriptionRunUpsertOne) ClearArtifacts() *SubscriptionRunUpsertOne {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.ClearArtifacts()
 	})
 }
 
@@ -760,7 +809,7 @@ func (_c *SubscriptionRunCreateBulk) ExecX(ctx context.Context) {
 //		// Override some of the fields with custom
 //		// update values.
 //		Update(func(u *ent.SubscriptionRunUpsert) {
-//			SetTopic(v+v).
+//			SetSubscription(v+v).
 //		}).
 //		Exec(ctx)
 func (_c *SubscriptionRunCreateBulk) OnConflict(opts ...sql.ConflictOption) *SubscriptionRunUpsertBulk {
@@ -829,17 +878,17 @@ func (u *SubscriptionRunUpsertBulk) Update(set func(*SubscriptionRunUpsert)) *Su
 	return u
 }
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionRunUpsertBulk) SetTopic(v string) *SubscriptionRunUpsertBulk {
+// SetSubscription sets the "subscription" field.
+func (u *SubscriptionRunUpsertBulk) SetSubscription(v string) *SubscriptionRunUpsertBulk {
 	return u.Update(func(s *SubscriptionRunUpsert) {
-		s.SetTopic(v)
+		s.SetSubscription(v)
 	})
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionRunUpsertBulk) UpdateTopic() *SubscriptionRunUpsertBulk {
+// UpdateSubscription sets the "subscription" field to the value that was provided on create.
+func (u *SubscriptionRunUpsertBulk) UpdateSubscription() *SubscriptionRunUpsertBulk {
 	return u.Update(func(s *SubscriptionRunUpsert) {
-		s.UpdateTopic()
+		s.UpdateSubscription()
 	})
 }
 
@@ -966,6 +1015,27 @@ func (u *SubscriptionRunUpsertBulk) SetBody(v string) *SubscriptionRunUpsertBulk
 func (u *SubscriptionRunUpsertBulk) UpdateBody() *SubscriptionRunUpsertBulk {
 	return u.Update(func(s *SubscriptionRunUpsert) {
 		s.UpdateBody()
+	})
+}
+
+// SetArtifacts sets the "artifacts" field.
+func (u *SubscriptionRunUpsertBulk) SetArtifacts(v []string) *SubscriptionRunUpsertBulk {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.SetArtifacts(v)
+	})
+}
+
+// UpdateArtifacts sets the "artifacts" field to the value that was provided on create.
+func (u *SubscriptionRunUpsertBulk) UpdateArtifacts() *SubscriptionRunUpsertBulk {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.UpdateArtifacts()
+	})
+}
+
+// ClearArtifacts clears the value of the "artifacts" field.
+func (u *SubscriptionRunUpsertBulk) ClearArtifacts() *SubscriptionRunUpsertBulk {
+	return u.Update(func(s *SubscriptionRunUpsert) {
+		s.ClearArtifacts()
 	})
 }
 

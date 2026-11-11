@@ -19,20 +19,29 @@ import (
 
 // Message 是一条待推送的报告。
 type Message struct {
-	Topic   string // 产生该报告的订阅主题,用于日志与产物命名
-	Subject string // 标题(不含通道前缀)
-	Body    string // Markdown 正文(推送前渲染为 HTML)
+	Subscription string // 产生该报告的订阅名,用于日志与产物命名
+	Subject      string // 标题(不含通道前缀)
+	Body         string // 报告正文(Markdown 或 HTML 片段,推送前统一渲染为完整 HTML 文档)
+}
+
+// Result 是一次推送的结果:描述文案与产物 DSN 列表(仅站内信模式非空)。
+type Result struct {
+	// Detail 是结果描述(投递摘要/产物 DSN),用于测试反馈与日志。
+	Detail string
+	// Artifacts 是本次推送写入的产物路径(DSN 格式:类型://空间名/分桶/文件名)。
+	Artifacts []string
 }
 
 // Pusher 是推送通道抽象。
 type Pusher interface {
-	// Push 推送一条报告,返回结果描述(如产物相对路径/投递摘要);失败返回错误。
-	Push(ctx context.Context, msg *Message) (string, error)
+	// Push 推送一条报告;失败返回错误。
+	Push(ctx context.Context, msg *Message) (*Result, error)
 }
 
-// New 按目标配置、全局发送器配置、已解析的 SMTP 密码与产物空间创建通道实例。
-// password 由调用方通过 config.Resolver 解析(页面配置,加密存储)。
-func New(target *repository.Target, mcfg *repository.MailerConfig, password string, artifacts *artifact.Manager) (Pusher, error) {
+// New 按目标配置、全局发送器配置、已解析的 SMTP 密码与产物空间集合创建通道实例。
+// space 为订阅关联的产物空间名(站内信模式写入目标;可空);password 由调用方
+// 通过 config.Resolver 解析(页面配置,加密存储)。
+func New(target *repository.Target, mcfg *repository.MailerConfig, password string, spaces *artifact.Spaces, space string) (Pusher, error) {
 	switch target.Type {
 	case "email":
 		return &EmailPusher{
@@ -41,7 +50,8 @@ func New(target *repository.Target, mcfg *repository.MailerConfig, password stri
 			Mode:          mcfg.Type,
 			Smtp:          mcfg.Smtp,
 			Password:      password,
-			Artifacts:     artifacts,
+			Spaces:        spaces,
+			Space:         space,
 		}, nil
 	default:
 		// repository.Validate 已拦截非法类型;此处兜底
@@ -49,36 +59,37 @@ func New(target *repository.Target, mcfg *repository.MailerConfig, password stri
 	}
 }
 
-// EmailPusher 是 email 通道:站内信模式写入产物空间;smtp 走内置发件邮箱真实投递。
+// EmailPusher 是 email 通道:站内信模式写入订阅关联的产物空间;smtp 走内置发件邮箱真实投递。
 type EmailPusher struct {
 	To            string
 	SubjectPrefix string
 	Mode          string // repository.MailerTypeInbox | repository.MailerTypeSMTP
 	Smtp          repository.SmtpConfig
 	Password      string // SMTP 授权码(已解析,不落库不明文)
-	Artifacts     *artifact.Manager
+	Spaces        *artifact.Spaces
+	Space         string // 订阅关联的产物空间名(空 = 不写产物空间)
 }
 
 // Push 发送(或落盘)邮件。
-func (p *EmailPusher) Push(ctx context.Context, msg *Message) (string, error) {
+func (p *EmailPusher) Push(ctx context.Context, msg *Message) (*Result, error) {
 	switch p.Mode {
 	case repository.MailerTypeInbox:
 		return p.writeArtifact(ctx, msg)
 	case repository.MailerTypeSMTP:
 		return p.sendSMTP(msg)
 	default:
-		return "", fmt.Errorf("未知 mailer.type: %q", p.Mode)
+		return nil, fmt.Errorf("未知 mailer.type: %q", p.Mode)
 	}
 }
 
 // sendSMTP 通过内置 SMTP 发件邮箱投递 HTML 邮件。
-func (p *EmailPusher) sendSMTP(msg *Message) (string, error) {
+func (p *EmailPusher) sendSMTP(msg *Message) (*Result, error) {
 	if p.Smtp.Host == "" || p.Smtp.From == "" {
-		return "", fmt.Errorf("SMTP 发件邮箱未配置:请在 Web 界面“配置 → 全局设置 → 发送”中填写 host 与发件人地址")
+		return nil, fmt.Errorf("SMTP 发件邮箱未配置:请在 Web 界面“配置 → 全局设置 → 发送”中填写 host 与发件人地址")
 	}
 	password := p.Password
 	if password == "" {
-		return "", fmt.Errorf("SMTP 密码/授权码未配置:请在 Web 界面“配置 → 全局设置”中填写并加密保存")
+		return nil, fmt.Errorf("SMTP 密码/授权码未配置:请在 Web 界面“配置 → 全局设置”中填写并加密保存")
 	}
 
 	m := p.buildMessage(msg)
@@ -92,11 +103,11 @@ func (p *EmailPusher) sendSMTP(msg *Message) (string, error) {
 	d.SSL = sslOrDefault(p.Smtp)
 
 	if err := d.DialAndSend(m); err != nil {
-		return "", fmt.Errorf("SMTP 发送失败(%s:%d): %w", p.Smtp.Host, port, err)
+		return nil, fmt.Errorf("SMTP 发送失败(%s:%d): %w", p.Smtp.Host, port, err)
 	}
 	detail := fmt.Sprintf("email→%s 已通过 %s:%d 发送", p.To, p.Smtp.Host, port)
 	fmt.Printf("[pusher] %s\n", detail)
-	return detail, nil
+	return &Result{Detail: detail}, nil
 }
 
 // sslOrDefault 返回是否使用隐式 TLS:显式 ssl 配置优先;缺省按端口判断(465 → true)。
@@ -122,20 +133,29 @@ func (p *EmailPusher) buildMessage(msg *Message) *mail.Message {
 	return m
 }
 
-// writeArtifact 将报告渲染为 HTML 写入产物空间:<分桶>/<topic>-<时间戳>.html。
-func (p *EmailPusher) writeArtifact(ctx context.Context, msg *Message) (string, error) {
-	if p.Artifacts == nil {
-		return "", fmt.Errorf("产物空间未就绪:请检查 storage 配置")
+// writeArtifact 将报告渲染为 HTML 写入订阅关联的产物空间:
+// <分桶>/<topic>-<时间戳>.html,返回带产物 DSN 的结果。
+func (p *EmailPusher) writeArtifact(ctx context.Context, msg *Message) (*Result, error) {
+	if p.Space == "" {
+		return nil, fmt.Errorf("订阅未关联产物空间:请在订阅设置中选择,或改用 smtp 投递")
+	}
+	if p.Spaces == nil {
+		return nil, fmt.Errorf("产物空间未就绪:请检查 storage 配置")
+	}
+	mgr, ok := p.Spaces.Manager(p.Space)
+	if !ok {
+		return nil, fmt.Errorf("产物空间 %q 不存在:请检查订阅的空间引用与全局设置", p.Space)
 	}
 	html := render.EmailHTML(p.applyPrefix(msg.Subject), msg.Body, time.Now())
-	name := fmt.Sprintf("%s-%s.html", sanitize(msg.Topic), time.Now().Format("20060102-150405"))
-	rel, err := p.Artifacts.Save(ctx, name, []byte(html))
+	name := fmt.Sprintf("%s-%s.html", sanitize(msg.Subscription), time.Now().Format("20060102-150405"))
+	bucket, err := mgr.Save(ctx, name, []byte(html))
 	if err != nil {
-		return "", fmt.Errorf("写入产物 %s: %w", name, err)
+		return nil, fmt.Errorf("写入产物 %s: %w", name, err)
 	}
-	detail := fmt.Sprintf("email→%s 站内信:产物已写入 %s", p.To, rel)
+	dsn := artifact.DSN(p.Spaces.Type(p.Space), p.Space, bucket, name)
+	detail := fmt.Sprintf("email→%s 站内信:产物已写入 %s", p.To, dsn)
 	fmt.Printf("[pusher] %s\n", detail)
-	return detail, nil
+	return &Result{Detail: detail, Artifacts: []string{dsn}}, nil
 }
 
 // applyPrefix 拼接标题前缀。

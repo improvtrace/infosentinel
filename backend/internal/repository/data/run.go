@@ -11,22 +11,22 @@ import (
 )
 
 // StartRun 实现 repository.RunRepository:创建一条 running 状态的运行记录。
-func (d *Data) StartRun(ctx context.Context, topic, trigger string) (int64, error) {
+func (d *Data) StartRun(ctx context.Context, subscription, trigger string) (int64, error) {
 	row, err := d.client.SubscriptionRun.Create().
-		SetTopic(topic).
+		SetSubscription(subscription).
 		SetTrigger(trigger).
 		SetStatus(string(repository.RunStatusRunning)).
 		SetStartedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("创建运行记录 topic=%s: %w", topic, err)
+		return 0, fmt.Errorf("创建运行记录 subscription=%s: %w", subscription, err)
 	}
 	return int64(row.ID), nil
 }
 
-// FinishRun 实现 repository.RunRepository:成功写 subject/body,失败写错误信息;
+// FinishRun 实现 repository.RunRepository:成功写 subject/body/artifacts,失败写错误信息;
 // 记录不存在时静默返回。
-func (d *Data) FinishRun(ctx context.Context, id int64, runErr error, subject, body string) error {
+func (d *Data) FinishRun(ctx context.Context, id int64, runErr error, subject, body string, artifacts []string) error {
 	row, err := d.client.SubscriptionRun.Get(ctx, int(id))
 	if ent.IsNotFound(err) {
 		return nil
@@ -40,6 +40,10 @@ func (d *Data) FinishRun(ctx context.Context, id int64, runErr error, subject, b
 		SetDuration(int64(now.Sub(row.StartedAt))).
 		SetSubject(subject).
 		SetBody(body)
+	if artifacts == nil {
+		artifacts = []string{}
+	}
+	up = up.SetArtifacts(artifacts)
 	if runErr != nil {
 		up = up.SetStatus(string(repository.RunStatusFailed)).SetError(runErr.Error())
 	} else {
@@ -51,11 +55,11 @@ func (d *Data) FinishRun(ctx context.Context, id int64, runErr error, subject, b
 	return nil
 }
 
-// ListRuns 实现 repository.RunRepository:按开始时间倒序;topic 非空时过滤。
-func (d *Data) ListRuns(ctx context.Context, topic string, limit int) ([]repository.RunRecord, error) {
+// ListRuns 实现 repository.RunRepository:按开始时间倒序;subscription 非空时过滤。
+func (d *Data) ListRuns(ctx context.Context, subscription string, limit int) ([]repository.RunRecord, error) {
 	q := d.client.SubscriptionRun.Query().Order(ent.Desc(subscriptionrun.FieldStartedAt, subscriptionrun.FieldID))
-	if topic != "" {
-		q = q.Where(subscriptionrun.Topic(topic))
+	if subscription != "" {
+		q = q.Where(subscriptionrun.Subscription(subscription))
 	}
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -94,17 +98,22 @@ func (d *Data) CountRuns(ctx context.Context) (int, error) {
 
 // runRecord 把 ent 实体映射为领域模型。
 func runRecord(r *ent.SubscriptionRun) repository.RunRecord {
+	artifacts := r.Artifacts
+	if artifacts == nil {
+		artifacts = []string{}
+	}
 	return repository.RunRecord{
-		ID:         int64(r.ID),
-		Topic:      r.Topic,
-		Trigger:    r.Trigger,
-		Status:     repository.RunStatus(r.Status),
-		StartedAt:  r.StartedAt,
-		FinishedAt: r.FinishedAt,
-		Duration:   time.Duration(r.Duration),
-		Error:      r.Error,
-		Subject:    r.Subject,
-		Body:       r.Body,
+		ID:           int64(r.ID),
+		Subscription: r.Subscription,
+		Trigger:      r.Trigger,
+		Status:       repository.RunStatus(r.Status),
+		StartedAt:    r.StartedAt,
+		FinishedAt:   r.FinishedAt,
+		Duration:     time.Duration(r.Duration),
+		Error:        r.Error,
+		Subject:      r.Subject,
+		Body:         r.Body,
+		Artifacts:    artifacts,
 	}
 }
 

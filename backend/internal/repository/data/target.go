@@ -84,7 +84,7 @@ func (d *Data) UsedByTarget(ctx context.Context, name string) (int, error) {
 	return len(subs), nil
 }
 
-// subscriptionsUsingTarget 扫描订阅并统计 targets JSON 中引用该目标的订阅主题列表。
+// subscriptionsUsingTarget 扫描订阅并统计 targets JSON 中引用该目标的订阅名称列表。
 func (d *Data) subscriptionsUsingTarget(ctx context.Context, name string) ([]string, error) {
 	subs, err := d.ListSubscriptions(ctx)
 	if err != nil {
@@ -94,7 +94,7 @@ func (d *Data) subscriptionsUsingTarget(ctx context.Context, name string) ([]str
 	for _, s := range subs {
 		for _, ref := range s.Targets {
 			if ref == name {
-				out = append(out, s.Topic)
+				out = append(out, s.Name)
 				break
 			}
 		}

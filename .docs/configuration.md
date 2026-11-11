@@ -5,15 +5,15 @@
 | | 位置 | 内容 | 修改方式 |
 |---|---|---|---|
 | 引导配置 | `config.yaml`(安装后为 `<PREFIX>/config/config.yaml`) | `database.path`、`log.path`、`log.level`、`storage.base_dir`、`state_dir` | 编辑文件后重启 |
-| 业务配置 | SQLite(`database.path`) | sources / topics / targets / subscriptions / llm / mailer / server / storage | **Web 管理界面**,保存即生效 |
+| 业务配置 | SQLite(`database.path`) | topics / targets / subscriptions / llm / mailer / server / storage | **Web 管理界面**,保存即生效 |
 
 分层原则:**引导配置只放部署路径,业务配置只放业务语义**。
 业务配置不读环境变量,Web 界面是唯一修改入口;唯一的例外是加密主密钥
 `INFOSENTINEL_ENCRYPT_KEY`(见下文敏感数据)。
 
-> 数据库为空时(`infosentinel migrate` 或首次启动)自动写入**内置默认配置**
-> (1 个主题、1 个 email 目标、1 条每日订阅、数据源开启搜索/RSS/HN/Trending,
-> 投递类型为站内信)。默认值集中在 `backend/internal/repository/migrate/builtin.go`,
+> 数据库首次初始化(`infosentinel migrate` 或首次启动执行迁移)时写入**内置默认配置**
+> (4 个内置主题、1 个 email 目标、1 条关联全部主题的每日订阅「情报日报」,投递类型为站内信)。
+> 默认值集中在 init 迁移 SQL(`backend/internal/repository/migrate/migrations/`)中,
 > 业务配置的类型定义在 `backend/internal/repository/model.go` —— `config` 包只有引导配置。
 
 ## 引导配置(config.yaml)
@@ -33,19 +33,24 @@ state_dir: ".tests/data/state"          # 运行时状态(采集去重记录,<to
 
 ## 业务配置字段(均在 Web 界面维护)
 
-### sources — 公用数据源池
+### 采集工具(无全局配置)
 
-| 段 | 对应工具 | 字段 | 默认值 |
-|---|---|---|---|
-| `collect` | — | `window_hours` / `max_items_per_source` / `http_timeout_sec` / `max_body_chars` / `dedup_days` | 48 / 15 / 20 / 4000 / 7 |
-| `rss` | `fetch_rss` | `enabled`、`feeds[]{name,url}` | — |
-| `search` | `search_web` | `enabled`、`region`(cn-zh)、`max_results`(8) | — |
-| `hackernews` | `fetch_hackernews` | `enabled`、`top_n`(15)、`min_points`(50) | — |
-| `github_trending` | `fetch_github_trending` | `enabled`、`language`、`top_n`(10) | — |
-| `webpages` | `fetch_webpage` | `[]{name,url}`(非空即启用) | 空 |
+采集信息源没有全局配置:五个内置工具常驻,由模型按主题指令调用,
+RSS 地址、筛选阈值等直接写在主题 prompt 里、经工具参数传入:
 
-> 历史版本曾把去重状态目录 `state_dir` 放在这里;它属于部署路径,
-> 现已移到引导配置 `config.yaml` 的 `state_dir`。旧库中残留的该字段会被忽略。
+| 工具 | 参数 | 内置默认 |
+|---|---|---|
+| `fetch_rss` | `url`(RSS/Atom 源地址) | 时间窗 48h,单次 ≤15 条 |
+| `fetch_webpage` | `url`(网页地址) | 正文截断 4000 字符 |
+| `fetch_hackernews` | `min_points` / `top_n`(可选) | 50 分 / 15 条 |
+| `fetch_github_trending` | `language`(可选) | 前 10 个仓库 |
+| `search_web` | `query`、`time_range`(d/w/m) | 区域 cn-zh,≤8 条 |
+
+采集通用参数(HTTP 超时 20s、URL 去重保留 7 天等)为
+`backend/pkg/tools` 的内置常量,不提供配置。
+
+> 历史版本的 `sources` 设置段(公用数据源池)已移除,旧库中残留的该设置行
+> 启动时自动删除;去重状态目录 `state_dir` 此前也已移到引导配置 `config.yaml`。
 
 ### topics — 主题
 
@@ -57,8 +62,12 @@ state_dir: ".tests/data/state"          # 运行时状态(采集去重记录,<to
 
 ### subscriptions — 订阅
 
-`topic`(引用主题,订阅的唯一标识:一个主题最多一条订阅)、`cron`(单个 cron 五段表达式)、
-`targets[]`(引用目标,可多个)。订阅 = 主题 + cron + 推送目标,在侧边栏「订阅管理」维护。
+`name`(订阅的唯一标识,产物文件与运行记录按它命名)、`topics[]`(引用主题,**可多个**,
+订阅与主题多对多:一个主题可被多个订阅引用)、`synthesis`(合成提示词:多主题各自采集后
+按它合并为一份报告,新建为空时回填内置默认值 —— 默认要求输出 HTML 正文片段;
+正文为 Markdown 时推送前自动转换,HTML 片段则直通渲染)、`cron`(单个 cron 五段表达式)、
+`targets[]`(引用目标,可多选)、`space`(引用产物空间,**单个**;空 = 不写产物空间)。
+订阅 = 名称 + 多主题(合并为一份报告)+ cron + 推送目标 + 产物空间,在侧边栏「订阅管理」维护。
 
 ### llm — 模型(OpenAI 兼容)
 
@@ -81,18 +90,25 @@ API Key 不在模型配置里:在「配置 → 全局设置」中填写并加密
 > 历史版本的投递类型值 `dryrun` 已更名为 `站内信`;升级后首次加载配置时自动归一化,无需手工处理。
 > SMTP 授权码不在发送配置里:在「配置 → 全局设置」中填写并加密保存(名称 `smtp.password`)。
 
-### storage — 产物空间
+### storage — 产物空间(可配置多个)
+
+`spaces[]` 为产物空间列表,可同时配置多个;订阅按 `name` 引用其中一个,站内信报告
+写入订阅关联的那个空间。产物引用路径采用 DSN 格式:`类型://空间名/分桶/文件名`
+(如 `local://默认空间/2026-11-11/world-situation-20261111-080000.html`),记入运行记录的
+产物路径列。每个空间的字段:
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
+| `name` | — | 空间唯一标识,订阅按名引用 |
 | `type` | `local` | `local`(本地磁盘)/ `sftp` / `ftp`,驱动实现见 `backend/pkg/storage` |
 | `path` | `""` | 产物路径(相对根目录;本地实际路径 = `storage.base_dir` + 本路径) |
 | `period_days` / `max_dirs` | 1 / 30 | 每 m 天的产物存入同一分桶子目录(以起始日期命名),最多保留 n 个,超出删最旧 |
 | `sftp.host/port/username` | — | SFTP 连接;`key_path` 私钥可选,`host_key` 指纹校验可选,`base_dir` 远端基础目录 |
 | `ftp.host/port/username` | — | FTP 连接;`base_dir` 远端基础目录,`tls` 启用 FTPS(显式 TLS) |
 
-SFTP/FTP 登录密码在「配置 → 全局设置」中填写并加密保存(名称 `storage.password`;
-本地驱动或私钥登录无需密码)。
+SFTP/FTP 登录密码在「配置 → 全局设置」逐空间填写并加密保存(名称 `storage.<空间名>.password`;
+本地驱动或私钥登录无需密码)。旧库只有全局 `storage.password` 时自动回退,升级无需重录。
+旧版单空间扁平 storage 配置在升级后首次加载时自动包装为单空间列表,无需手工处理。
 
 ### server — 管理界面
 
@@ -107,7 +123,7 @@ SFTP/FTP 登录密码在「配置 → 全局设置」中填写并加密保存(�
 |---|---|---|
 | `llm.api_key` | 模型 API Key | 运行订阅必需 |
 | `smtp.password` | SMTP 密码/授权码 | `mailer.type=smtp` 必需 |
-| `storage.password` | SFTP/FTP 登录密码 | 产物空间走 sftp/ftp 且用密码登录时 |
+| `storage.<空间名>.password` | 逐空间 SFTP/FTP 登录密码 | 空间走 sftp/ftp 且用密码登录时(缺失回退旧版 `storage.password`) |
 
 - 启用加密存储需设置主密钥:`INFOSENTINEL_ENCRYPT_KEY=<任意强随机串>`
   (经 SHA-256 派生出 AES-256 密钥;**丢失主密钥将无法解密已存数据**)
@@ -127,6 +143,7 @@ SFTP/FTP 登录密码在「配置 → 全局设置」中填写并加密保存(�
 - **升级**:替换二进制即可;启动时自动执行版本化迁移(不删除已有数据)。
   也可先单独执行 `infosentinel migrate`(或 `make migrate`)再启动。
   历史配置兼容:旧库中 `mailer.type=dryrun` 自动归一化为 `站内信`;
+  旧库残留的 `sources` 设置段(公用数据源池)启动时自动删除;
   旧的环境变量密钥(`api_key_env` / `password_env` 字段)不再读取,
   请升级后在「全局设置」中重新填写并加密保存
 - **回滚限制**:数据库被更高版本程序迁移后,旧程序拒绝启动;请恢复数据库备份

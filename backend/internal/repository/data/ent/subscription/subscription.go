@@ -11,12 +11,18 @@ const (
 	Label = "subscription"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
-	// FieldTopic holds the string denoting the topic field in the database.
-	FieldTopic = "topic"
+	// FieldName holds the string denoting the name field in the database.
+	FieldName = "name"
+	// FieldTopics holds the string denoting the topics field in the database.
+	FieldTopics = "topics"
+	// FieldSynthesis holds the string denoting the synthesis field in the database.
+	FieldSynthesis = "synthesis"
 	// FieldCron holds the string denoting the cron field in the database.
 	FieldCron = "cron"
 	// FieldTargets holds the string denoting the targets field in the database.
 	FieldTargets = "targets"
+	// FieldSpace holds the string denoting the space field in the database.
+	FieldSpace = "space"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 )
@@ -24,9 +30,12 @@ const (
 // Columns holds all SQL columns for subscription fields.
 var Columns = []string{
 	FieldID,
-	FieldTopic,
+	FieldName,
+	FieldTopics,
+	FieldSynthesis,
 	FieldCron,
 	FieldTargets,
+	FieldSpace,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -40,10 +49,14 @@ func ValidColumn(column string) bool {
 }
 
 var (
-	// TopicValidator is a validator for the "topic" field. It is called by the builders before save.
-	TopicValidator func(string) error
+	// NameValidator is a validator for the "name" field. It is called by the builders before save.
+	NameValidator func(string) error
+	// SynthesisValidator is a validator for the "synthesis" field. It is called by the builders before save.
+	SynthesisValidator func(string) error
 	// CronValidator is a validator for the "cron" field. It is called by the builders before save.
 	CronValidator func(string) error
+	// DefaultSpace holds the default value on creation for the "space" field.
+	DefaultSpace string
 )
 
 // OrderOption defines the ordering options for the Subscription queries.
@@ -54,12 +67,22 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
 }
 
-// ByTopic orders the results by the topic field.
-func ByTopic(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTopic, opts...).ToFunc()
+// ByName orders the results by the name field.
+func ByName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// BySynthesis orders the results by the synthesis field.
+func BySynthesis(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSynthesis, opts...).ToFunc()
 }
 
 // ByCron orders the results by the cron field.
 func ByCron(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCron, opts...).ToFunc()
+}
+
+// BySpace orders the results by the space field.
+func BySpace(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSpace, opts...).ToFunc()
 }

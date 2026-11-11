@@ -14,9 +14,9 @@ make migrate-diff NAME=add_tags   # schema 变更后生成版本化迁移文件
 make frontend   # 前端构建(npm ci + vite build → frontend/dist)
 make wire       # 生成 wire 依赖注入代码(依赖图变更后执行)
 make build      # 编译 artifacts/bin/infosentinel(前端内嵌,注入 git 版本)
-make serve      # 启动(空库自动写入内置默认配置)
-make run ARGS="-topic ai-agent"  # 单轮执行(按订阅主题)
-make migrate    # 初始化/升级数据库;空库写入内置默认配置后退出
+make serve      # 启动(首次启动自动初始化数据库与内置默认配置)
+make run ARGS='-topic "情报日报"'  # 单轮执行(按订阅名称,缺省执行全部)
+make migrate    # 初始化/升级数据库;内置默认配置随迁移写入后退出
 make package    # 一键打包 artifacts/dist/infosentinel-<ver>-<os>-<arch>.tar.gz
 make check      # vet + test + build
 make clean      # 清理 artifacts/(保留 .tests/ 运行数据)
@@ -32,10 +32,10 @@ make clean      # 清理 artifacts/(保留 .tests/ 运行数据)
 | `frontend/src` | SPA 页面组件 | 只通过 `src/api.ts` 调 `/api/*` |
 | `backend/internal/server` | kratos HTTP handler | 不写 SQL、不做存储细节 |
 | `backend/internal/repository` | 业务配置模型(model.go)+ 每表操作接口(一表一文件) | 上层只依赖接口与模型类型 |
-| `backend/internal/repository/data` | ent 实现(每表一文件)+ 空库内置种子 | 唯一允许出现 ent/DB 代码的位置 |
+| `backend/internal/repository/data` | ent 实现(每表一文件) | 唯一允许出现 ent/DB 代码的位置 |
 | `backend/internal/repository/data/ent` | ent 生成代码 | 不手改;`make gen` 重新生成 |
 | `backend/internal/repository/schema` | ent schema:表结构唯一事实源(手写) | 改完执行 `make gen` + `make migrate-diff` |
-| `backend/internal/repository/migrate` | 版本化迁移执行器 + 内置默认配置(builtin.go)+ migrations 目录 | migrations/ 文件与 atlas.sum 不可手改 |
+| `backend/internal/repository/migrate` | 版本化迁移执行器 + migrations 目录(init.sql 含内置默认配置) | 调整内置默认值直接改 init.sql 后重算 atlas.sum(`migrate-diff -hash`) |
 | `backend/cmd/migrate-diff` | 迁移文件生成工具 | 经 `make migrate-diff NAME=xxx` 调用 |
 | `backend/cmd/infosentinel/provider.go` | 应用组装 Provider(newApp / newCLIApp) | 动态依赖(runner/scheduler)不进静态 wire 图 |
 | `backend/cmd/infosentinel/wire.go` | wire 注入器声明(initApp / initCLI) | 依赖图变更后 `make wire` 重新生成 |
@@ -48,7 +48,7 @@ make clean      # 清理 artifacts/(保留 .tests/ 运行数据)
 3. `make migrate-diff NAME=add_tags` 生成迁移文件(`<时间戳>_add_tags.sql` + atlas.sum)
 4. `repository/` 增加接口(或扩展已有接口文件)
 5. `repository/data/<table>.go` 实现(参考 topic.go 的 upsert / 引用检查写法)
-6. 需要初始数据则在 `repository/migrate/builtin.go` 的 `Builtins()` 中补充内置默认配置
+6. 需要初始数据则在迁移 SQL(init.sql)中补充内置数据,并重算 atlas.sum
 
 ## 数据库迁移
 
@@ -57,7 +57,7 @@ ent 标准版本化迁移(Atlas 引擎),`sql/versioned-migration` 特性已开�
 ```bash
 make gen                  # 1. 生成 ORM 代码(schema 变更后)
 make migrate-diff NAME=add_tags   # 2. 生成迁移文件(内存库重放求差,不碰真实数据库)
-make migrate              # 3. 验证:应用迁移(空库写入内置默认配置)后退出
+make migrate              # 3. 验证:应用迁移(内置默认配置随迁移写入)后退出
 ```
 
 - 迁移目录:`backend/internal/repository/migrate/migrations/`——
@@ -93,15 +93,14 @@ npm run build   # tsc --noEmit + vite build
 | `GET/POST /api/topics` · `PUT/DELETE /api/topics/{name}` | 主题 CRUD |
 | `GET/POST /api/targets` · `PUT/DELETE /api/targets/{name}` | 推送目标 CRUD |
 | `POST /api/targets/{name}/test` | 发送测试邮件 |
-| `GET/POST /api/subscriptions` · `PUT/DELETE /api/subscriptions/{topic}` | 订阅 CRUD(主题即订阅身份;`{topic, cron, targets}`) |
-| `POST /api/subscriptions/{topic}/run` | 手动触发(运行中 409) |
-| `GET/PUT /api/sources` | 数据源(YAML) |
-| `GET /api/settings` · `PUT /api/settings/{llm\|mailer\|server\|storage}` | 全局设置(请求体可附带 `secret` 字段,随保存一并加密落库,对应分区密钥 `llm.api_key` / `smtp.password` / `storage.password`) |
+| `GET/POST /api/subscriptions` · `PUT/DELETE /api/subscriptions/{name}` | 订阅 CRUD(名称即订阅身份;`{name, topics[], synthesis, cron, targets[], space}`) |
+| `POST /api/subscriptions/{name}/run` | 手动触发(运行中 409) |
+| `GET /api/settings` · `PUT /api/settings/{llm\|mailer\|server\|storage}` | 全局设置(请求体可附带 `secret` 字段,随保存一并加密落库,对应分区密钥 `llm.api_key` / `smtp.password`;storage 段另附 `secrets` 表(`{空间名: 密码}`,加密为 `storage.<空间名>.password`)。旧库扁平 storage JSON 由 `Finalize()` 包装为 `spaces[]`) |
 | `POST /api/settings/llm/test` · `POST /api/settings/mailer/test` | 测试模型 / 发送器配置(表单值,不落库) |
 | `GET /api/secrets` · `DELETE /api/secrets/{name}` | 密钥名称 / 删除 |
 | `POST /api/apply` | 手动重载配置并重建调度 |
-| `GET /api/runs?topic=&limit=` · `GET /api/runs/{id}` | 运行历史(subscription_runs 表持久化) |
-| `GET /api/artifacts` · `GET /api/artifacts/{bucket}/{name}` | 产物空间(HTML 产物,支持 ?topic= 过滤) |
+| `GET /api/runs?subscription=&limit=` · `GET /api/runs/{id}` | 运行历史(subscription_runs 表持久化;记录含 `artifacts[]` 产物 DSN) |
+| `GET /api/artifacts` · `GET /api/artifacts/{space}/{bucket}/{name}` | 产物空间(HTML 产物,支持 ?subscription= / ?space= 过滤;条目含 `space` 与 `dsn`) |
 | `GET /api/healthz` | 健康状态 |
 
 写操作语义:整份配置 `Finalize()` 校验 → 落库 → 自动 `Apply()` 热生效;
@@ -121,11 +120,12 @@ npm run build   # tsc --noEmit + vite build
 make test    # go test -race ./...
 ```
 
-- `data`:空库自动内置种子(`Seeded`/`LoadConfig` 回读)、`SeedFromConfig` 整体替换、引用保护、密钥加密落库与解密
-- `repository`:配置模型校验表驱动(`model_test.go`);`migrate`:内置默认配置(`builtin_test.go`)
+- `data`:配置聚合读取(`LoadConfig` 回读)、引用保护、密钥加密落库与解密
+- `repository`:配置模型校验表驱动(`model_test.go`);`migrate`:迁移执行与目录完整性(`migrate_test.go`)
 - `crypto`:往返加解密、错误主密钥、缺少主密钥
 - `logger`:JSON 行格式与级别
 - `tools`:采集工具用 httptest mock;`runner`:并发守卫
+- `agent`:系统/合成提示词组装锚点、标题正文拆分、单份报告短路;`render`:Markdown 转换、HTML 片段直通与防护
 - 不依赖外网与真实密钥
 
 ## 部署与运维

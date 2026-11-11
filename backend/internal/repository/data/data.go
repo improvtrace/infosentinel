@@ -25,7 +25,6 @@ type Data struct {
 	client          *ent.Client
 	db              *sql.DB
 	migrationResult MigrationResult
-	seeded          bool
 }
 
 // Options 是数据层初始化参数。
@@ -35,7 +34,7 @@ type Options struct {
 }
 
 // New 打开数据库、执行版本化迁移(ent/Atlas 标准流程,幂等)并返回 Data。
-// 空库时写入 migrate 内置默认配置(种子)。
+// 内置默认配置(主题/订阅/推送目标/全局设置)由 init 迁移 SQL 写入。
 func New(opts Options) (*Data, error) {
 	if dir := filepath.Dir(opts.DBPath); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -59,39 +58,11 @@ func New(opts Options) (*Data, error) {
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
-	d := &Data{client: client, db: db, migrationResult: res}
-	if err := d.seedBuiltins(context.Background()); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return d, nil
+	return &Data{client: client, db: db, migrationResult: res}, nil
 }
 
 // MigrationResult 返回 New 初始化时执行的迁移结果。
 func (d *Data) MigrationResult() MigrationResult { return d.migrationResult }
 
-// Seeded 报告 New 初始化时是否写入了内置默认配置(空库种子)。
-func (d *Data) Seeded() bool { return d.seeded }
-
 // Close 关闭数据库。
 func (d *Data) Close() error { return d.client.Close() }
-
-// seedBuiltins 空库时写入 migrate 内置默认配置(migrate 子命令与首次启动均生效)。
-func (d *Data) seedBuiltins(ctx context.Context) error {
-	empty, err := d.IsEmpty(ctx)
-	if err != nil {
-		return fmt.Errorf("检查数据库是否为空: %w", err)
-	}
-	if !empty {
-		return nil
-	}
-	seed, err := dbmigrate.Builtins()
-	if err != nil {
-		return err
-	}
-	if err := d.SeedFromConfig(ctx, seed); err != nil {
-		return fmt.Errorf("写入内置默认配置: %w", err)
-	}
-	d.seeded = true
-	return nil
-}

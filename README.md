@@ -1,15 +1,15 @@
 # InfoSentinel
 
-基于 [CloudWeGo Eino](https://github.com/cloudwego/eino) 的兴趣资讯收集 Agent:配置公用数据源,为主题(一段 prompt)自动采集内容、总结成结构化报告;一个订阅 = 主题 + 一个 cron 调度 + 多个推送目标,按订阅定时推送 —— 站内信(存入产物空间,界面在线查看)或多个邮箱(内置 SMTP 真实发送)。
+基于 [CloudWeGo Eino](https://github.com/cloudwego/eino) 的兴趣资讯收集 Agent:为主题(一段 prompt)编写采集指令 —— 内置 RSS/搜索/HN/Trending/网页五个采集工具常驻,信息源直接写在 prompt 里 —— 自动采集内容、总结成结构化报告;一个订阅 = 名称 + 多个主题(先整体意图分析分组,每组作为子任务采集,各组报告再按合成提示词合并为一份)+ 一个 cron 调度 + 多个推送目标 + 一个产物空间,按订阅定时推送 —— 站内信(存入产物空间,界面在线查看)或多个邮箱(内置 SMTP 真实发送);产物空间可同时配置多个(本地磁盘 / SFTP / FTP),运行历史记录产物路径(DSN:类型://空间名/分桶/文件名)。
 
 **技术栈**:Eino(Agent) · kratos(HTTP/应用生命周期/日志) · google/wire(依赖注入) · ent + SQLite(ORM 与迁移) · React 18 + TypeScript + Tailwind(Vite 构建,内嵌进二进制)。
 
 ## 特性
 
 - **Eino ReAct Agent**:模型自主决策调用哪些采集工具、何时深读网页、如何取舍
-- **配置以 SQLite 为唯一事实源**:config.yaml 仅保留部署路径(数据库/日志/产物根目录/去重状态);业务配置全部在 Web 界面维护,不读环境变量,保存即校验并热生效;内置默认配置由 `repository/migrate` 在迁移时写入空库
+- **配置以 SQLite 为唯一事实源**:config.yaml 仅保留部署路径(数据库/日志/产物根目录/去重状态);业务配置全部在 Web 界面维护,不读环境变量,保存即校验并热生效;内置默认配置由 init 迁移 SQL 写入
 - **wire 依赖注入**:kratos 风格 ProviderSet(各包 `provider.go`),`make wire` 生成注入代码;静态图 = 引导配置 → 日志/数据层 → 仓库接口 → 敏感数据解析 → kratos app
-- **ent ORM + 版本化迁移(Atlas)**:schema 即代码,`make migrate-diff` 生成迁移文件(atlas.sum 完整性校验),启动时经 atlas Executor 执行并记录 `atlas_schema_revisions`,幂等、断点续跑;也可用 `migrate` 子命令单独执行(空库同时写入内置默认配置)
+- **ent ORM + 版本化迁移(Atlas)**:schema 即代码,`make migrate-diff` 生成迁移文件(atlas.sum 完整性校验),启动时经 atlas Executor 执行并记录 `atlas_schema_revisions`,幂等、断点续跑;也可用 `migrate` 子命令单独执行(内置默认配置随迁移写入)
 - **repository 分层**:`repository/` 每表一个接口文件 + 业务配置模型(`model.go`),`repository/data`(ent)每表一个实现文件;`schema/` 与 `migrate/` 独立于 ent 生成代码
 - **敏感数据加密**:模型 API Key / SMTP 授权码在界面填写,AES-256-GCM 加密入库(主密钥 `INFOSENTINEL_ENCRYPT_KEY`)
 - **结构化日志**:kratos log 输出 JSON 到文件与 stdout,含 API 访问、订阅运行、调度、密钥操作埋点
@@ -23,7 +23,7 @@ make gen          # 生成 ent 代码(schema → ent,含版本化迁移支持)
 make frontend     # 构建前端(需要 Node.js)
 make wire         # 生成 wire 依赖注入代码(依赖图变更后执行)
 make build        # 编译 artifacts/bin/infosentinel(前端内嵌)
-make serve        # 启动服务(空库自动写入内置默认配置)
+make serve        # 启动服务(首次启动自动初始化数据库与内置默认配置)
 
 export INFOSENTINEL_ENCRYPT_KEY=...   # 加密主密钥:在界面“全局设置”保存 API Key 前必需
 # → http://127.0.0.1:8080 → 「配置 → 全局设置」填写模型 API Key(加密存储)
@@ -80,10 +80,10 @@ backend/
   internal/
     server/               kratos HTTP:REST API(/api/*)+ SPA 托管 + 访问日志
     repository/           业务配置模型(model.go)+ 每表操作接口(repository.go 聚合)
-      data/               ent 实现:每表一文件 + 空库内置种子(ent 生成代码位于 data/ent)
+      data/               ent 实现:每表一文件(ent 生成代码位于 data/ent)
       schema/             ent schema:表结构唯一事实源(手写)
-      migrate/            版本化迁移执行器(atlas Executor)+ 内置默认配置(builtin.go)
-        migrations/       迁移目录(<时间戳>_<描述>.sql + atlas.sum,内嵌进二进制)
+      migrate/            版本化迁移执行器(atlas Executor)
+        migrations/       迁移目录(init.sql 含 schema 与内置默认配置 + atlas.sum,内嵌进二进制)
     config/               引导配置(Bootstrap:数据库/日志/产物根目录/去重状态)+ 敏感数据解析
     agent/                Eino ReAct Agent(主题 prompt + 公用工具)
     artifact/             产物空间(每 m 天一个分桶子目录 + 最多 n 个保留)
@@ -95,7 +95,7 @@ backend/pkg/
   crypto/                 AES-256-GCM 敏感数据加密
   logger/                 kratos log JSON 文件日志
   storage/                产物存储抽象接口(local / sftp / ftp 驱动)
-  render/                 Markdown → 独立 HTML 文档(邮件与产物共用)
+  render/                 报告正文 → 独立 HTML 文档(Markdown 转换 / HTML 片段直通,邮件与产物共用)
 hack/                     构建与部署脚本(gen/wire/build/test/package/deploy)
   tools/tools.go          wire CLI 以模块依赖引入(Go 1.26 兼容)
 ```

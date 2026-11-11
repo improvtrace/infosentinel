@@ -10,7 +10,7 @@
 //	infosentinel run -topic name     只执行指定主题的订阅
 //	infosentinel serve               常驻,按各订阅的 cron 定时执行(含 Web 管理)
 //	infosentinel list                打印主题/目标/订阅一览
-//	infosentinel migrate             初始化/升级数据库并写入内置默认配置后退出
+//	infosentinel migrate             初始化/升级数据库(内置默认配置随迁移写入)后退出
 //	infosentinel -c other.yaml run   指定引导配置文件
 package main
 
@@ -43,7 +43,7 @@ const usage = `infosentinel — 基于 Eino 的兴趣资讯收集 Agent
   run     执行订阅(默认全部;配合 -topic 只跑一个),采集 → 总结 → 推送
   serve   常驻运行,按各订阅 cron 定时执行;内置 Web 管理界面(kratos HTTP)
   list    打印配置中的主题 / 推送目标 / 订阅一览
-  migrate 初始化或升级数据库表结构;空库写入内置默认配置(幂等)后退出
+  migrate 初始化或升级数据库表结构;内置默认配置随迁移写入(幂等)后退出
 
 Flags:
   -c string     引导配置文件路径(默认 "config.yaml";仅含 database / log / storage)
@@ -113,11 +113,7 @@ func cliMain(cmd, cfgPath, topicName string) {
 	}
 	defer cleanup()
 
-	if cli.Data.Seeded() {
-		cli.Log.Infow("database_seeded")
-	}
-
-	// migrate:只做数据库初始化/升级(空库写入内置默认配置)后退出
+	// migrate:只做数据库初始化/升级(迁移写入内置默认配置)后退出
 	if cmd == "migrate" {
 		res := cli.Data.MigrationResult()
 		printMigration(res, cli.Boot.Database.Path)
@@ -172,45 +168,50 @@ func loadEffective(lg *klog.Helper, repo repository.Repository) *repository.Conf
 	return cfg
 }
 
-// selectSubscriptions 按 -topic 参数筛选要执行的订阅;空 = 全部。
-func selectSubscriptions(cfg *repository.Config, topic string) ([]repository.Subscription, error) {
-	if topic == "" {
+// selectSubscriptions 按 -topic 参数(订阅名)筛选要执行的订阅;空 = 全部。
+func selectSubscriptions(cfg *repository.Config, name string) ([]repository.Subscription, error) {
+	if name == "" {
 		return cfg.Subscriptions, nil
 	}
-	s := cfg.SubscriptionByTopic(topic)
+	s := cfg.SubscriptionByName(name)
 	if s == nil {
-		return nil, fmt.Errorf("订阅 %q 不存在(可用 list 子命令查看)", topic)
+		return nil, fmt.Errorf("订阅 %q 不存在(可用 list 子命令查看)", name)
 	}
 	return []repository.Subscription{*s}, nil
 }
 
 // run 执行选中的订阅;单个订阅失败不影响其余订阅,最后汇总退出码。
-func run(cfg *repository.Config, boot *config.Bootstrap, secrets *config.Resolver, lg *klog.Helper, topic string) {
-	subs, err := selectSubscriptions(cfg, topic)
+func run(cfg *repository.Config, boot *config.Bootstrap, secrets *config.Resolver, lg *klog.Helper, name string) {
+	subs, err := selectSubscriptions(cfg, name)
 	if err != nil {
 		lg.Fatalf("选择订阅失败: %v", err)
 	}
 
-	// 产物空间:站内信投递写入;密码缺失不致命(本地驱动/私钥登录不需要)
+	// 产物空间集合:站内信投递写入;密码缺失不致命(本地驱动/私钥登录不需要)
 	ctx := context.Background()
-	password, perr := secrets.StoragePassword(ctx, "")
-	if perr != nil {
-		lg.Warnf("storage_password_resolve_failed err=%v", perr)
-	}
-	arts, err := artifact.Build(&cfg.Storage, boot.Storage.BaseDir, password)
-	if err != nil {
-		lg.Fatalf("初始化产物空间失败: %v", err)
+	spaces := artifact.NewSpaces()
+	for i := range cfg.Storage.Spaces {
+		space := &cfg.Storage.Spaces[i]
+		password, perr := secrets.StoragePassword(ctx, space.Name, "")
+		if perr != nil {
+			lg.Warnf("storage_password_resolve_failed space=%s err=%v", space.Name, perr)
+		}
+		mgr, err := artifact.Build(space, boot.Storage.BaseDir, password)
+		if err != nil {
+			lg.Fatalf("初始化产物空间 %q 失败: %v", space.Name, err)
+		}
+		spaces.Add(space, mgr)
 	}
 
-	r := runner.New(cfg, secrets, arts, boot.StateDir, lg)
+	r := runner.New(cfg, secrets, spaces, boot.StateDir, lg)
 	var failed []string
 	for _, s := range subs {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.LLM.TimeoutSec)*time.Second)
-		_, err := r.RunTask(ctx, s)
+		_, _, err := r.RunTask(ctx, s)
 		cancel()
 		if err != nil {
-			lg.Warnf("sub_run_failed topic=%s err=%v", s.Topic, err)
-			failed = append(failed, s.Topic)
+			lg.Warnf("sub_run_failed subscription=%s err=%v", s.Name, err)
+			failed = append(failed, s.Name)
 		}
 	}
 	if len(failed) > 0 {
@@ -229,8 +230,12 @@ func list(cfg *repository.Config) {
 	for _, t := range cfg.Targets {
 		fmt.Printf("  %-20s %-6s → %s\n", t.Name, t.Type, t.To)
 	}
+	fmt.Println("产物空间:")
+	for _, sp := range cfg.Storage.Spaces {
+		fmt.Printf("  %-20s %-6s path=%q period=%dd\n", sp.Name, sp.Type, sp.Path, sp.PeriodDays)
+	}
 	fmt.Println("订阅:")
 	for _, s := range cfg.Subscriptions {
-		fmt.Printf("  topic=%-20s cron=%-14s targets=%v\n", s.Topic, s.Cron, s.Targets)
+		fmt.Printf("  name=%-20s topics=%v cron=%-14s targets=%v space=%s\n", s.Name, s.Topics, s.Cron, s.Targets, s.Space)
 	}
 }

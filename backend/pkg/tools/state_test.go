@@ -61,6 +61,65 @@ func TestSeenStoreMemoryMode(t *testing.T) {
 	}
 }
 
+func TestSeenStoreMultiMergeAndSave(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.json")
+	pathB := filepath.Join(dir, "b.json")
+	now := time.Now()
+
+	// 两个主题各自已有的状态:shared 两边都有(b 更早),另各有独占条目
+	sa, err := NewSeenStore(pathA, 7)
+	if err != nil {
+		t.Fatalf("NewSeenStore(a): %v", err)
+	}
+	sa.Mark([]string{"shared", "only-a"}, now)
+	if err := sa.Save(now); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	sb, err := NewSeenStore(pathB, 7)
+	if err != nil {
+		t.Fatalf("NewSeenStore(b): %v", err)
+	}
+	sb.Mark([]string{"shared", "only-b"}, now.Add(-time.Hour))
+	if err := sb.Save(now); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	// 合并加载:任一文件见过的条目都视为已见
+	merged, err := NewSeenStoreMulti([]string{pathA, pathB}, 7)
+	if err != nil {
+		t.Fatalf("NewSeenStoreMulti: %v", err)
+	}
+	if got := merged.Filter([]string{"shared", "only-a", "only-b", "new"}); len(got) != 1 || got[0] != "new" {
+		t.Fatalf("合并后应只剩 new 未见,得到 %v", got)
+	}
+	merged.Mark([]string{"new"}, now)
+	if err := merged.Save(now); err != nil {
+		t.Fatalf("合并状态 Save: %v", err)
+	}
+
+	// 保存应写回全部文件:任一文件单独加载都持有完整合并状态
+	for _, p := range []string{pathA, pathB} {
+		s, err := NewSeenStore(p, 7)
+		if err != nil {
+			t.Fatalf("重新加载 %s: %v", p, err)
+		}
+		if got := s.Filter([]string{"shared", "only-a", "only-b", "new"}); len(got) != 0 {
+			t.Errorf("%s 的合并状态未写回,未见: %v", p, got)
+		}
+	}
+
+	// 含空路径 → 纯内存模式,Save 为空操作
+	mm, err := NewSeenStoreMulti([]string{""}, 7)
+	if err != nil {
+		t.Fatalf("NewSeenStoreMulti(内存模式): %v", err)
+	}
+	mm.Mark([]string{"x"}, now)
+	if err := mm.Save(now); err != nil {
+		t.Fatalf("内存模式 Save 应为空操作: %v", err)
+	}
+}
+
 func TestTruncateAndStripHTML(t *testing.T) {
 	if got := stripHTML("<p>Hello <b>世界</b>!\n</p>"); got != "Hello 世界!" {
 		t.Errorf("stripHTML = %q", got)

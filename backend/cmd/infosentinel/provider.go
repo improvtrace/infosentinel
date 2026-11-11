@@ -55,9 +55,6 @@ func newApp(
 	secrets *config.Resolver,
 	lg *klog.Helper,
 ) (*kratos.App, func(), error) {
-	if d.Seeded() {
-		lg.Infow("database_seeded")
-	}
 	lg.Infow("startup",
 		"version", version,
 		"db", boot.Database.Path,
@@ -67,14 +64,23 @@ func newApp(
 		"schema_version", d.MigrationResult().To,
 	)
 
-	// buildArtifacts 按配置构建产物空间(热重载时随配置重建)。
-	buildArtifacts := func(c *repository.Config) (*artifact.Manager, error) {
-		pass, err := secrets.StoragePassword(context.Background(), "")
-		if err != nil {
-			lg.Warnf("storage_password_resolve_failed err=%v", err)
-			pass = ""
+	// buildArtifacts 按配置构建产物空间集合(逐空间;热重载时随配置重建)。
+	buildArtifacts := func(c *repository.Config) (*artifact.Spaces, error) {
+		spaces := artifact.NewSpaces()
+		for i := range c.Storage.Spaces {
+			space := &c.Storage.Spaces[i]
+			pass, err := secrets.StoragePassword(context.Background(), space.Name, "")
+			if err != nil {
+				lg.Warnf("storage_password_resolve_failed space=%s err=%v", space.Name, err)
+				pass = ""
+			}
+			mgr, err := artifact.Build(space, boot.Storage.BaseDir, pass)
+			if err != nil {
+				return nil, fmt.Errorf("初始化产物空间 %q 失败: %w", space.Name, err)
+			}
+			spaces.Add(space, mgr)
 		}
-		return artifact.Build(&c.Storage, boot.Storage.BaseDir, pass)
+		return spaces, nil
 	}
 
 	arts, err := buildArtifacts(cfg)
@@ -92,7 +98,7 @@ func newApp(
 
 	logNexts := func(nexts []scheduler.NextRun) {
 		for _, nr := range nexts {
-			lg.Infow("schedule_registered", "topic", nr.Topic, "cron", nr.Cron, "next", nr.Next.Format(time.RFC3339))
+			lg.Infow("schedule_registered", "subscription", nr.Subscription, "cron", nr.Cron, "next", nr.Next.Format(time.RFC3339))
 		}
 	}
 
@@ -101,7 +107,7 @@ func newApp(
 		jobs := make([]scheduler.Job, 0, len(c.Subscriptions))
 		for _, sub := range c.Subscriptions {
 			jobs = append(jobs, scheduler.Job{
-				Name:     sub.Topic,
+				Name:     sub.Name,
 				Schedule: sub.Cron,
 				Run:      rn.RecordedJob(sub, repo, repository.RunTriggerSchedule),
 			})
@@ -147,25 +153,25 @@ func newApp(
 			}
 			return sched.NextRuns()
 		},
-		Artifacts: func() *artifact.Manager { mu.Lock(); defer mu.Unlock(); return curArts },
+		Artifacts: func() *artifact.Spaces { mu.Lock(); defer mu.Unlock(); return curArts },
 		IsRunning: func(name string) bool { mu.Lock(); defer mu.Unlock(); return curRun.IsRunning(name) },
-		Trigger: func(topic string) error {
+		Trigger: func(name string) error {
 			mu.Lock()
 			c, rn := curCfg, curRun
 			mu.Unlock()
-			sub := c.SubscriptionByTopic(topic)
+			sub := c.SubscriptionByName(name)
 			if sub == nil {
-				return errSubscriptionNotFound(topic)
+				return errSubscriptionNotFound(name)
 			}
-			if rn.IsRunning(topic) {
-				return errSubscriptionRunning(topic)
+			if rn.IsRunning(name) {
+				return errSubscriptionRunning(name)
 			}
 			// 后台执行:立即返回,进度通过运行记录与订阅页查看
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.LLM.TimeoutSec)*time.Second)
 				defer cancel()
 				if err := rn.RecordedJob(*sub, repo, repository.RunTriggerManual)(ctx); err != nil {
-					lg.Warnf("sub_run_failed topic=%s trigger=manual err=%v", topic, err)
+					lg.Warnf("sub_run_failed subscription=%s trigger=manual err=%v", name, err)
 				}
 			}()
 			return nil
@@ -179,14 +185,14 @@ func newApp(
 				return errTargetNotFound(name)
 			}
 			pass, _ := secrets.SMTPPassword(context.Background())
-			p, err := pusher.New(t, &c.Mailer, pass, arts)
+			p, err := pusher.New(t, &c.Mailer, pass, arts, testSpaceName(arts))
 			if err != nil {
 				return err
 			}
 			_, err = p.Push(context.Background(), &pusher.Message{
-				Topic:   "test",
-				Subject: "InfoSentinel 测试邮件",
-				Body:    "这是一封来自 InfoSentinel Web 管理界面的测试邮件。\n\n收到它说明该推送目标配置正确。",
+				Subscription: "test",
+				Subject:      "InfoSentinel 测试邮件",
+				Body:         "这是一封来自 InfoSentinel Web 管理界面的测试邮件。\n\n收到它说明该推送目标配置正确。",
 			})
 			return err
 		},
@@ -243,15 +249,19 @@ func newApp(
 			if err != nil {
 				return "", err
 			}
-			p, err := pusher.New(&repository.Target{Name: "test", Type: "email", To: to}, &mcfg, pass, arts)
+			p, err := pusher.New(&repository.Target{Name: "test", Type: "email", To: to}, &mcfg, pass, arts, testSpaceName(arts))
 			if err != nil {
 				return "", err
 			}
-			return p.Push(ctx, &pusher.Message{
-				Topic:   "test",
-				Subject: "InfoSentinel 发送器测试邮件",
-				Body:    "这是一封来自 InfoSentinel Web 管理界面的**发送器测试邮件**。\n\n收到它说明全局发送器配置正确。",
+			res, err := p.Push(ctx, &pusher.Message{
+				Subscription: "test",
+				Subject:      "InfoSentinel 发送器测试邮件",
+				Body:         "这是一封来自 InfoSentinel Web 管理界面的**发送器测试邮件**。\n\n收到它说明全局发送器配置正确。",
 			})
+			if err != nil {
+				return "", err
+			}
+			return res.Detail, nil
 		},
 		Apply: func() error {
 			c, err := repo.LoadConfig(context.Background())

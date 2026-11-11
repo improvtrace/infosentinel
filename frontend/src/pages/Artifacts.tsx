@@ -8,26 +8,27 @@ import type { ArtifactFile, ListResp } from '../types'
 export default function Artifacts() {
   const [items, setItems] = useState<ArtifactFile[]>([])
   const [params] = useSearchParams()
-  const topic = params.get('topic') ?? ''
+  const subscription = params.get('subscription') ?? ''
 
   useEffect(() => {
-    const q = topic ? `?topic=${encodeURIComponent(topic)}` : ''
+    const q = subscription ? `?subscription=${encodeURIComponent(subscription)}` : ''
     get<ListResp<ArtifactFile>>(`/api/artifacts${q}`).then((r) => setItems(r.items)).catch(() => null)
-  }, [topic])
+  }, [subscription])
 
   return (
     <div>
       <PageHead
         title="产物空间"
-        desc="站内信报告与运行产物(HTML 文档),按分桶周期存放在存储驱动(本地磁盘 / SFTP / FTP)中。"
+        desc="站内信报告与运行产物(HTML 文档),按分桶周期存放在各产物空间(本地磁盘 / SFTP / FTP)中。"
       />
-      <Section title={`共 ${items.length} 个`}>
+      <Section title={`共 ${items.length} 个${subscription ? `(订阅 ${subscription})` : ''}`}>
         {items.length > 0 ? (
           <TableWrap>
             <table className="tbl">
               <thead>
                 <tr>
                   <th>文件</th>
+                  <th>空间</th>
                   <th>订阅</th>
                   <th>分桶</th>
                   <th>大小</th>
@@ -36,19 +37,22 @@ export default function Artifacts() {
               </thead>
               <tbody>
                 {items.map((f) => (
-                  <tr key={`${f.bucket}/${f.name}`}>
+                  <tr key={`${f.space}/${f.bucket}/${f.name}`}>
                     <td>
                       <Link
                         className="text-accent no-underline hover:underline"
-                        to={`/artifacts/${encodeURIComponent(f.bucket)}/${encodeURIComponent(f.name)}`}
+                        to={`/artifacts/${encodeURIComponent(f.space)}/${encodeURIComponent(f.bucket)}/${encodeURIComponent(f.name)}`}
                       >
                         {f.name}
                       </Link>
                     </td>
                     <td>
-                      {f.topic && (
-                        <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(f.topic)}`}>
-                          {f.topic}
+                      <span className="mono">{f.space}</span>
+                    </td>
+                    <td>
+                      {f.subscription && (
+                        <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(f.subscription)}`}>
+                          {f.subscription}
                         </Link>
                       )}
                     </td>

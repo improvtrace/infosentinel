@@ -28,16 +28,42 @@ func (_u *SubscriptionUpdate) Where(ps ...predicate.Subscription) *SubscriptionU
 	return _u
 }
 
-// SetTopic sets the "topic" field.
-func (_u *SubscriptionUpdate) SetTopic(v string) *SubscriptionUpdate {
-	_u.mutation.SetTopic(v)
+// SetName sets the "name" field.
+func (_u *SubscriptionUpdate) SetName(v string) *SubscriptionUpdate {
+	_u.mutation.SetName(v)
 	return _u
 }
 
-// SetNillableTopic sets the "topic" field if the given value is not nil.
-func (_u *SubscriptionUpdate) SetNillableTopic(v *string) *SubscriptionUpdate {
+// SetNillableName sets the "name" field if the given value is not nil.
+func (_u *SubscriptionUpdate) SetNillableName(v *string) *SubscriptionUpdate {
 	if v != nil {
-		_u.SetTopic(*v)
+		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetTopics sets the "topics" field.
+func (_u *SubscriptionUpdate) SetTopics(v []string) *SubscriptionUpdate {
+	_u.mutation.SetTopics(v)
+	return _u
+}
+
+// AppendTopics appends value to the "topics" field.
+func (_u *SubscriptionUpdate) AppendTopics(v []string) *SubscriptionUpdate {
+	_u.mutation.AppendTopics(v)
+	return _u
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (_u *SubscriptionUpdate) SetSynthesis(v string) *SubscriptionUpdate {
+	_u.mutation.SetSynthesis(v)
+	return _u
+}
+
+// SetNillableSynthesis sets the "synthesis" field if the given value is not nil.
+func (_u *SubscriptionUpdate) SetNillableSynthesis(v *string) *SubscriptionUpdate {
+	if v != nil {
+		_u.SetSynthesis(*v)
 	}
 	return _u
 }
@@ -65,6 +91,20 @@ func (_u *SubscriptionUpdate) SetTargets(v []string) *SubscriptionUpdate {
 // AppendTargets appends value to the "targets" field.
 func (_u *SubscriptionUpdate) AppendTargets(v []string) *SubscriptionUpdate {
 	_u.mutation.AppendTargets(v)
+	return _u
+}
+
+// SetSpace sets the "space" field.
+func (_u *SubscriptionUpdate) SetSpace(v string) *SubscriptionUpdate {
+	_u.mutation.SetSpace(v)
+	return _u
+}
+
+// SetNillableSpace sets the "space" field if the given value is not nil.
+func (_u *SubscriptionUpdate) SetNillableSpace(v *string) *SubscriptionUpdate {
+	if v != nil {
+		_u.SetSpace(*v)
+	}
 	return _u
 }
 
@@ -102,9 +142,14 @@ func (_u *SubscriptionUpdate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionUpdate) check() error {
-	if v, ok := _u.mutation.Topic(); ok {
-		if err := subscription.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "Subscription.topic": %w`, err)}
+	if v, ok := _u.mutation.Name(); ok {
+		if err := subscription.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Subscription.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Synthesis(); ok {
+		if err := subscription.SynthesisValidator(v); err != nil {
+			return &ValidationError{Name: "synthesis", err: fmt.Errorf(`ent: validator failed for field "Subscription.synthesis": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Cron(); ok {
@@ -127,8 +172,19 @@ func (_u *SubscriptionUpdate) sqlSave(ctx context.Context) (_node int, err error
 			}
 		}
 	}
-	if value, ok := _u.mutation.Topic(); ok {
-		_spec.SetField(subscription.FieldTopic, field.TypeString, value)
+	if value, ok := _u.mutation.Name(); ok {
+		_spec.SetField(subscription.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Topics(); ok {
+		_spec.SetField(subscription.FieldTopics, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedTopics(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscription.FieldTopics, value)
+		})
+	}
+	if value, ok := _u.mutation.Synthesis(); ok {
+		_spec.SetField(subscription.FieldSynthesis, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Cron(); ok {
 		_spec.SetField(subscription.FieldCron, field.TypeString, value)
@@ -140,6 +196,9 @@ func (_u *SubscriptionUpdate) sqlSave(ctx context.Context) (_node int, err error
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, subscription.FieldTargets, value)
 		})
+	}
+	if value, ok := _u.mutation.Space(); ok {
+		_spec.SetField(subscription.FieldSpace, field.TypeString, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -161,16 +220,42 @@ type SubscriptionUpdateOne struct {
 	mutation *SubscriptionMutation
 }
 
-// SetTopic sets the "topic" field.
-func (_u *SubscriptionUpdateOne) SetTopic(v string) *SubscriptionUpdateOne {
-	_u.mutation.SetTopic(v)
+// SetName sets the "name" field.
+func (_u *SubscriptionUpdateOne) SetName(v string) *SubscriptionUpdateOne {
+	_u.mutation.SetName(v)
 	return _u
 }
 
-// SetNillableTopic sets the "topic" field if the given value is not nil.
-func (_u *SubscriptionUpdateOne) SetNillableTopic(v *string) *SubscriptionUpdateOne {
+// SetNillableName sets the "name" field if the given value is not nil.
+func (_u *SubscriptionUpdateOne) SetNillableName(v *string) *SubscriptionUpdateOne {
 	if v != nil {
-		_u.SetTopic(*v)
+		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetTopics sets the "topics" field.
+func (_u *SubscriptionUpdateOne) SetTopics(v []string) *SubscriptionUpdateOne {
+	_u.mutation.SetTopics(v)
+	return _u
+}
+
+// AppendTopics appends value to the "topics" field.
+func (_u *SubscriptionUpdateOne) AppendTopics(v []string) *SubscriptionUpdateOne {
+	_u.mutation.AppendTopics(v)
+	return _u
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (_u *SubscriptionUpdateOne) SetSynthesis(v string) *SubscriptionUpdateOne {
+	_u.mutation.SetSynthesis(v)
+	return _u
+}
+
+// SetNillableSynthesis sets the "synthesis" field if the given value is not nil.
+func (_u *SubscriptionUpdateOne) SetNillableSynthesis(v *string) *SubscriptionUpdateOne {
+	if v != nil {
+		_u.SetSynthesis(*v)
 	}
 	return _u
 }
@@ -198,6 +283,20 @@ func (_u *SubscriptionUpdateOne) SetTargets(v []string) *SubscriptionUpdateOne {
 // AppendTargets appends value to the "targets" field.
 func (_u *SubscriptionUpdateOne) AppendTargets(v []string) *SubscriptionUpdateOne {
 	_u.mutation.AppendTargets(v)
+	return _u
+}
+
+// SetSpace sets the "space" field.
+func (_u *SubscriptionUpdateOne) SetSpace(v string) *SubscriptionUpdateOne {
+	_u.mutation.SetSpace(v)
+	return _u
+}
+
+// SetNillableSpace sets the "space" field if the given value is not nil.
+func (_u *SubscriptionUpdateOne) SetNillableSpace(v *string) *SubscriptionUpdateOne {
+	if v != nil {
+		_u.SetSpace(*v)
+	}
 	return _u
 }
 
@@ -248,9 +347,14 @@ func (_u *SubscriptionUpdateOne) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionUpdateOne) check() error {
-	if v, ok := _u.mutation.Topic(); ok {
-		if err := subscription.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "Subscription.topic": %w`, err)}
+	if v, ok := _u.mutation.Name(); ok {
+		if err := subscription.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Subscription.name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Synthesis(); ok {
+		if err := subscription.SynthesisValidator(v); err != nil {
+			return &ValidationError{Name: "synthesis", err: fmt.Errorf(`ent: validator failed for field "Subscription.synthesis": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Cron(); ok {
@@ -290,8 +394,19 @@ func (_u *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscripti
 			}
 		}
 	}
-	if value, ok := _u.mutation.Topic(); ok {
-		_spec.SetField(subscription.FieldTopic, field.TypeString, value)
+	if value, ok := _u.mutation.Name(); ok {
+		_spec.SetField(subscription.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Topics(); ok {
+		_spec.SetField(subscription.FieldTopics, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedTopics(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscription.FieldTopics, value)
+		})
+	}
+	if value, ok := _u.mutation.Synthesis(); ok {
+		_spec.SetField(subscription.FieldSynthesis, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Cron(); ok {
 		_spec.SetField(subscription.FieldCron, field.TypeString, value)
@@ -303,6 +418,9 @@ func (_u *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscripti
 		_spec.AddModifier(func(u *sql.UpdateBuilder) {
 			sqljson.Append(u, subscription.FieldTargets, value)
 		})
+	}
+	if value, ok := _u.mutation.Space(); ok {
+		_spec.SetField(subscription.FieldSpace, field.TypeString, value)
 	}
 	_node = &Subscription{config: _u.config}
 	_spec.Assign = _node.assignValues

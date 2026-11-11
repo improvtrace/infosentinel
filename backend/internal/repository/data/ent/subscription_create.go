@@ -21,9 +21,21 @@ type SubscriptionCreate struct {
 	conflict []sql.ConflictOption
 }
 
-// SetTopic sets the "topic" field.
-func (_c *SubscriptionCreate) SetTopic(v string) *SubscriptionCreate {
-	_c.mutation.SetTopic(v)
+// SetName sets the "name" field.
+func (_c *SubscriptionCreate) SetName(v string) *SubscriptionCreate {
+	_c.mutation.SetName(v)
+	return _c
+}
+
+// SetTopics sets the "topics" field.
+func (_c *SubscriptionCreate) SetTopics(v []string) *SubscriptionCreate {
+	_c.mutation.SetTopics(v)
+	return _c
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (_c *SubscriptionCreate) SetSynthesis(v string) *SubscriptionCreate {
+	_c.mutation.SetSynthesis(v)
 	return _c
 }
 
@@ -39,6 +51,20 @@ func (_c *SubscriptionCreate) SetTargets(v []string) *SubscriptionCreate {
 	return _c
 }
 
+// SetSpace sets the "space" field.
+func (_c *SubscriptionCreate) SetSpace(v string) *SubscriptionCreate {
+	_c.mutation.SetSpace(v)
+	return _c
+}
+
+// SetNillableSpace sets the "space" field if the given value is not nil.
+func (_c *SubscriptionCreate) SetNillableSpace(v *string) *SubscriptionCreate {
+	if v != nil {
+		_c.SetSpace(*v)
+	}
+	return _c
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (_c *SubscriptionCreate) Mutation() *SubscriptionMutation {
 	return _c.mutation
@@ -46,6 +72,7 @@ func (_c *SubscriptionCreate) Mutation() *SubscriptionMutation {
 
 // Save creates the Subscription in the database.
 func (_c *SubscriptionCreate) Save(ctx context.Context) (*Subscription, error) {
+	_c.defaults()
 	return withHooks(ctx, _c.sqlSave, _c.mutation, _c.hooks)
 }
 
@@ -71,14 +98,33 @@ func (_c *SubscriptionCreate) ExecX(ctx context.Context) {
 	}
 }
 
+// defaults sets the default values of the builder before save.
+func (_c *SubscriptionCreate) defaults() {
+	if _, ok := _c.mutation.Space(); !ok {
+		v := subscription.DefaultSpace
+		_c.mutation.SetSpace(v)
+	}
+}
+
 // check runs all checks and user-defined validators on the builder.
 func (_c *SubscriptionCreate) check() error {
-	if _, ok := _c.mutation.Topic(); !ok {
-		return &ValidationError{Name: "topic", err: errors.New(`ent: missing required field "Subscription.topic"`)}
+	if _, ok := _c.mutation.Name(); !ok {
+		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Subscription.name"`)}
 	}
-	if v, ok := _c.mutation.Topic(); ok {
-		if err := subscription.TopicValidator(v); err != nil {
-			return &ValidationError{Name: "topic", err: fmt.Errorf(`ent: validator failed for field "Subscription.topic": %w`, err)}
+	if v, ok := _c.mutation.Name(); ok {
+		if err := subscription.NameValidator(v); err != nil {
+			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Subscription.name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.Topics(); !ok {
+		return &ValidationError{Name: "topics", err: errors.New(`ent: missing required field "Subscription.topics"`)}
+	}
+	if _, ok := _c.mutation.Synthesis(); !ok {
+		return &ValidationError{Name: "synthesis", err: errors.New(`ent: missing required field "Subscription.synthesis"`)}
+	}
+	if v, ok := _c.mutation.Synthesis(); ok {
+		if err := subscription.SynthesisValidator(v); err != nil {
+			return &ValidationError{Name: "synthesis", err: fmt.Errorf(`ent: validator failed for field "Subscription.synthesis": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Cron(); !ok {
@@ -91,6 +137,9 @@ func (_c *SubscriptionCreate) check() error {
 	}
 	if _, ok := _c.mutation.Targets(); !ok {
 		return &ValidationError{Name: "targets", err: errors.New(`ent: missing required field "Subscription.targets"`)}
+	}
+	if _, ok := _c.mutation.Space(); !ok {
+		return &ValidationError{Name: "space", err: errors.New(`ent: missing required field "Subscription.space"`)}
 	}
 	return nil
 }
@@ -119,9 +168,17 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		_spec = sqlgraph.NewCreateSpec(subscription.Table, sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeInt))
 	)
 	_spec.OnConflict = _c.conflict
-	if value, ok := _c.mutation.Topic(); ok {
-		_spec.SetField(subscription.FieldTopic, field.TypeString, value)
-		_node.Topic = value
+	if value, ok := _c.mutation.Name(); ok {
+		_spec.SetField(subscription.FieldName, field.TypeString, value)
+		_node.Name = value
+	}
+	if value, ok := _c.mutation.Topics(); ok {
+		_spec.SetField(subscription.FieldTopics, field.TypeJSON, value)
+		_node.Topics = value
+	}
+	if value, ok := _c.mutation.Synthesis(); ok {
+		_spec.SetField(subscription.FieldSynthesis, field.TypeString, value)
+		_node.Synthesis = value
 	}
 	if value, ok := _c.mutation.Cron(); ok {
 		_spec.SetField(subscription.FieldCron, field.TypeString, value)
@@ -131,6 +188,10 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		_spec.SetField(subscription.FieldTargets, field.TypeJSON, value)
 		_node.Targets = value
 	}
+	if value, ok := _c.mutation.Space(); ok {
+		_spec.SetField(subscription.FieldSpace, field.TypeString, value)
+		_node.Space = value
+	}
 	return _node, _spec
 }
 
@@ -138,7 +199,7 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 // of the `INSERT` statement. For example:
 //
 //	client.Subscription.Create().
-//		SetTopic(v).
+//		SetName(v).
 //		OnConflict(
 //			// Update the row with the new values
 //			// the was proposed for insertion.
@@ -147,7 +208,7 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 //		// Override some of the fields with custom
 //		// update values.
 //		Update(func(u *ent.SubscriptionUpsert) {
-//			SetTopic(v+v).
+//			SetName(v+v).
 //		}).
 //		Exec(ctx)
 func (_c *SubscriptionCreate) OnConflict(opts ...sql.ConflictOption) *SubscriptionUpsertOne {
@@ -183,15 +244,39 @@ type (
 	}
 )
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionUpsert) SetTopic(v string) *SubscriptionUpsert {
-	u.Set(subscription.FieldTopic, v)
+// SetName sets the "name" field.
+func (u *SubscriptionUpsert) SetName(v string) *SubscriptionUpsert {
+	u.Set(subscription.FieldName, v)
 	return u
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionUpsert) UpdateTopic() *SubscriptionUpsert {
-	u.SetExcluded(subscription.FieldTopic)
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *SubscriptionUpsert) UpdateName() *SubscriptionUpsert {
+	u.SetExcluded(subscription.FieldName)
+	return u
+}
+
+// SetTopics sets the "topics" field.
+func (u *SubscriptionUpsert) SetTopics(v []string) *SubscriptionUpsert {
+	u.Set(subscription.FieldTopics, v)
+	return u
+}
+
+// UpdateTopics sets the "topics" field to the value that was provided on create.
+func (u *SubscriptionUpsert) UpdateTopics() *SubscriptionUpsert {
+	u.SetExcluded(subscription.FieldTopics)
+	return u
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (u *SubscriptionUpsert) SetSynthesis(v string) *SubscriptionUpsert {
+	u.Set(subscription.FieldSynthesis, v)
+	return u
+}
+
+// UpdateSynthesis sets the "synthesis" field to the value that was provided on create.
+func (u *SubscriptionUpsert) UpdateSynthesis() *SubscriptionUpsert {
+	u.SetExcluded(subscription.FieldSynthesis)
 	return u
 }
 
@@ -216,6 +301,18 @@ func (u *SubscriptionUpsert) SetTargets(v []string) *SubscriptionUpsert {
 // UpdateTargets sets the "targets" field to the value that was provided on create.
 func (u *SubscriptionUpsert) UpdateTargets() *SubscriptionUpsert {
 	u.SetExcluded(subscription.FieldTargets)
+	return u
+}
+
+// SetSpace sets the "space" field.
+func (u *SubscriptionUpsert) SetSpace(v string) *SubscriptionUpsert {
+	u.Set(subscription.FieldSpace, v)
+	return u
+}
+
+// UpdateSpace sets the "space" field to the value that was provided on create.
+func (u *SubscriptionUpsert) UpdateSpace() *SubscriptionUpsert {
+	u.SetExcluded(subscription.FieldSpace)
 	return u
 }
 
@@ -259,17 +356,45 @@ func (u *SubscriptionUpsertOne) Update(set func(*SubscriptionUpsert)) *Subscript
 	return u
 }
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionUpsertOne) SetTopic(v string) *SubscriptionUpsertOne {
+// SetName sets the "name" field.
+func (u *SubscriptionUpsertOne) SetName(v string) *SubscriptionUpsertOne {
 	return u.Update(func(s *SubscriptionUpsert) {
-		s.SetTopic(v)
+		s.SetName(v)
 	})
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionUpsertOne) UpdateTopic() *SubscriptionUpsertOne {
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *SubscriptionUpsertOne) UpdateName() *SubscriptionUpsertOne {
 	return u.Update(func(s *SubscriptionUpsert) {
-		s.UpdateTopic()
+		s.UpdateName()
+	})
+}
+
+// SetTopics sets the "topics" field.
+func (u *SubscriptionUpsertOne) SetTopics(v []string) *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetTopics(v)
+	})
+}
+
+// UpdateTopics sets the "topics" field to the value that was provided on create.
+func (u *SubscriptionUpsertOne) UpdateTopics() *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateTopics()
+	})
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (u *SubscriptionUpsertOne) SetSynthesis(v string) *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetSynthesis(v)
+	})
+}
+
+// UpdateSynthesis sets the "synthesis" field to the value that was provided on create.
+func (u *SubscriptionUpsertOne) UpdateSynthesis() *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateSynthesis()
 	})
 }
 
@@ -298,6 +423,20 @@ func (u *SubscriptionUpsertOne) SetTargets(v []string) *SubscriptionUpsertOne {
 func (u *SubscriptionUpsertOne) UpdateTargets() *SubscriptionUpsertOne {
 	return u.Update(func(s *SubscriptionUpsert) {
 		s.UpdateTargets()
+	})
+}
+
+// SetSpace sets the "space" field.
+func (u *SubscriptionUpsertOne) SetSpace(v string) *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetSpace(v)
+	})
+}
+
+// UpdateSpace sets the "space" field to the value that was provided on create.
+func (u *SubscriptionUpsertOne) UpdateSpace() *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateSpace()
 	})
 }
 
@@ -353,6 +492,7 @@ func (_c *SubscriptionCreateBulk) Save(ctx context.Context) ([]*Subscription, er
 	for i := range _c.builders {
 		func(i int, root context.Context) {
 			builder := _c.builders[i]
+			builder.defaults()
 			var mut Mutator = MutateFunc(func(ctx context.Context, m Mutation) (Value, error) {
 				mutation, ok := m.(*SubscriptionMutation)
 				if !ok {
@@ -435,7 +575,7 @@ func (_c *SubscriptionCreateBulk) ExecX(ctx context.Context) {
 //		// Override some of the fields with custom
 //		// update values.
 //		Update(func(u *ent.SubscriptionUpsert) {
-//			SetTopic(v+v).
+//			SetName(v+v).
 //		}).
 //		Exec(ctx)
 func (_c *SubscriptionCreateBulk) OnConflict(opts ...sql.ConflictOption) *SubscriptionUpsertBulk {
@@ -504,17 +644,45 @@ func (u *SubscriptionUpsertBulk) Update(set func(*SubscriptionUpsert)) *Subscrip
 	return u
 }
 
-// SetTopic sets the "topic" field.
-func (u *SubscriptionUpsertBulk) SetTopic(v string) *SubscriptionUpsertBulk {
+// SetName sets the "name" field.
+func (u *SubscriptionUpsertBulk) SetName(v string) *SubscriptionUpsertBulk {
 	return u.Update(func(s *SubscriptionUpsert) {
-		s.SetTopic(v)
+		s.SetName(v)
 	})
 }
 
-// UpdateTopic sets the "topic" field to the value that was provided on create.
-func (u *SubscriptionUpsertBulk) UpdateTopic() *SubscriptionUpsertBulk {
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *SubscriptionUpsertBulk) UpdateName() *SubscriptionUpsertBulk {
 	return u.Update(func(s *SubscriptionUpsert) {
-		s.UpdateTopic()
+		s.UpdateName()
+	})
+}
+
+// SetTopics sets the "topics" field.
+func (u *SubscriptionUpsertBulk) SetTopics(v []string) *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetTopics(v)
+	})
+}
+
+// UpdateTopics sets the "topics" field to the value that was provided on create.
+func (u *SubscriptionUpsertBulk) UpdateTopics() *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateTopics()
+	})
+}
+
+// SetSynthesis sets the "synthesis" field.
+func (u *SubscriptionUpsertBulk) SetSynthesis(v string) *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetSynthesis(v)
+	})
+}
+
+// UpdateSynthesis sets the "synthesis" field to the value that was provided on create.
+func (u *SubscriptionUpsertBulk) UpdateSynthesis() *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateSynthesis()
 	})
 }
 
@@ -543,6 +711,20 @@ func (u *SubscriptionUpsertBulk) SetTargets(v []string) *SubscriptionUpsertBulk 
 func (u *SubscriptionUpsertBulk) UpdateTargets() *SubscriptionUpsertBulk {
 	return u.Update(func(s *SubscriptionUpsert) {
 		s.UpdateTargets()
+	})
+}
+
+// SetSpace sets the "space" field.
+func (u *SubscriptionUpsertBulk) SetSpace(v string) *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetSpace(v)
+	})
+}
+
+// UpdateSpace sets the "space" field to the value that was provided on create.
+func (u *SubscriptionUpsertBulk) UpdateSpace() *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateSpace()
 	})
 }
 

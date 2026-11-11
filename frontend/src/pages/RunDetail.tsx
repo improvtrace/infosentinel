@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { marked } from 'marked'
 import { get, errMsg } from '../api'
-import { ftime, dur, triggerLabel } from '../fmt'
+import { ftime, dur, triggerLabel, parseDsn } from '../fmt'
 import { Crumb, Callout, PageHead, StatusBadge } from '../components/ui'
 import type { RunRecord } from '../types'
 
@@ -39,7 +39,7 @@ export default function RunDetail() {
   if (!r) return null
   return (
     <div>
-      <Crumb items={[{ to: '/', label: '概览' }, { to: `/subscriptions/${encodeURIComponent(r.topic)}`, label: r.topic }, { label: `运行 #${r.id}` }]} />
+      <Crumb items={[{ to: '/', label: '概览' }, { to: `/subscriptions/${encodeURIComponent(r.subscription)}`, label: r.subscription }, { label: `运行 #${r.id}` }]} />
       <PageHead
         title={
           <span className="flex items-center gap-3">
@@ -48,7 +48,7 @@ export default function RunDetail() {
         }
         desc={
           <>
-            订阅 <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(r.topic)}`}>{r.topic}</Link>
+            订阅 <Link className="text-accent no-underline hover:underline" to={`/subscriptions/${encodeURIComponent(r.subscription)}`}>{r.subscription}</Link>
             ，触发方式 {triggerLabel(r.trigger)}，开始于 {ftime(r.started_at)}
             {r.finished_at && (
               <>
@@ -64,6 +64,27 @@ export default function RunDetail() {
         }
       />
       {r.error && <div className="callout callout-error mb-4">{r.error}</div>}
+      {r.artifacts?.length > 0 && (
+        <div className="card mt-5 p-4">
+          <p className="m-0 text-[12.5px] font-medium text-dim">产物路径</p>
+          <ul className="mt-2 mb-0 list-none p-0">
+            {r.artifacts.map((dsn) => {
+              const p = parseDsn(dsn)
+              return (
+                <li key={dsn} className="mt-1 first:mt-0">
+                  <Link
+                    className="font-mono text-[12.5px] text-accent no-underline hover:underline break-all"
+                    title={dsn}
+                    to={p ? `/artifacts/${encodeURIComponent(p.space)}/${encodeURIComponent(p.bucket)}/${encodeURIComponent(p.name)}` : '/artifacts'}
+                  >
+                    {dsn}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
       {r.subject && <h2 className="mt-5 text-[15px] font-semibold">{r.subject}</h2>}
       {doc && (
         <iframe

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { IconAlert, IconCheck, IconChevron } from './icons'
 
@@ -138,4 +139,76 @@ export function Crumb({ items }: { items: { to?: string; label: string }[] }) {
 /** 表格容器(横向滚动 + 圆角边框)。 */
 export function TableWrap({ children }: { children: ReactNode }) {
   return <div className="card overflow-x-auto">{children}</div>
+}
+
+/** 下拉多选:触发按钮显示已选项,弹出面板内复选,点击面板外自动收起。 */
+export function MultiSelect({
+  options,
+  value,
+  onChange,
+  placeholder = '(空)',
+  emptyText = '暂无可选项',
+}: {
+  options: string[]
+  value: string[]
+  onChange: (next: string[]) => void
+  placeholder?: string
+  emptyText?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  // 点击组件外部时收起面板
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  const toggle = (name: string) => {
+    onChange(value.includes(name) ? value.filter((x) => x !== name) : [...value, name])
+  }
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <button
+        type="button"
+        className="input flex w-full items-center justify-between text-left"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="truncate">
+          {value.length > 0 ? (
+            <span>
+              {value.map((n, i) => (
+                <span key={n}>
+                  {i > 0 && '、'}
+                  <span className="mono">{n}</span>
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="text-ghost">{placeholder}</span>
+          )}
+        </span>
+        <IconChevron width={13} height={13} className={`shrink-0 text-ghost transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-line bg-surface shadow-lg">
+          {options.length === 0 ? (
+            <p className="m-0 px-3 py-2 text-[12.5px] text-ghost">{emptyText}</p>
+          ) : (
+            options.map((n) => (
+              <label key={n} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[13px] hover:bg-hover">
+                <input type="checkbox" className="check" checked={value.includes(n)} onChange={() => toggle(n)} />
+                <span className="mono">{n}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
